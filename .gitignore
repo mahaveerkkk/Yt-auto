@@ -1,2 +1,7 @@
 config/
 .env
+logs/
+__pycache__/
+core/__pycache__/
+notifier/__pycache__/
+utils/__pycache__/
