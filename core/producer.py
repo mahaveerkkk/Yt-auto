@@ -26,7 +26,26 @@ class Producer:
     - Automated cleanup of intermediate video fragments to protect VPS storage
     """
 
-    DOCUMENTARY_VOICE = "en-US-BrianMultilingualNeural"
+    VOICE_ROSTER = {
+        "Cosmic": "en-US-BrianMultilingualNeural",      # Deep, philosophical BBC narrator
+        "Ancient": "en-GB-RyanNeural",                   # British classical historical documentary
+        "Aviation": "en-US-ChristopherNeural",           # Crisp, military/investigative radio
+        "Ocean": "en-US-AndrewMultilingualNeural",       # Deep resonance oceanic narrative
+        "Default": "en-US-BrianMultilingualNeural"
+    }
+
+    def _select_voice_for_topic(self, topic: str, category: str = "") -> str:
+        """Dynamically casts the most fitting professional narrator voice per documentary theme."""
+        text = f"{topic} {category}".lower()
+        if any(w in text for w in ["ancient", "civilization", "pyramid", "ruins", "history", "atlantis"]):
+            return self.VOICE_ROSTER["Ancient"]
+        elif any(w in text for w in ["flight", "plane", "maritime", "ship", "bermuda", "radar", "classified"]):
+            return self.VOICE_ROSTER["Aviation"]
+        elif any(w in text for w in ["ocean", "sea", "bloop", "trench", "underwater", "abyss"]):
+            return self.VOICE_ROSTER["Ocean"]
+        elif any(w in text for w in ["space", "universe", "galaxy", "signal", "astronomy", "cosmic", "void", "physics"]):
+            return self.VOICE_ROSTER["Cosmic"]
+        return self.VOICE_ROSTER["Default"]
 
     def __init__(self):
         self.temp_dir = Path("/tmp/autodirector_production")
@@ -213,12 +232,13 @@ class Producer:
         worker_manager.start_task("producer", f"Synthesizing voiceover and visual montage for '{title}'")
         logger.info(f"[Producer] 🎬 Initiating Production for: '{title}'")
 
-        # 1. Voice Synthesis (Deep, Natural Brian Multilingual Voice)
+        # 1. Voice Synthesis (Dynamic Theme Voice Narrator)
+        chosen_voice = self._select_voice_for_topic(title, manifest.get("category", ""))
         voice_path = self.temp_dir / f"{title_slug}_voice.mp3"
-        logger.info(f"[Producer] Synthesizing Voiceover with {self.DOCUMENTARY_VOICE}...")
+        logger.info(f"[Producer] 🎙️ Casted Voice Narrator: {chosen_voice}...")
         try:
             async def _synth():
-                comm = edge_tts.Communicate(script, self.DOCUMENTARY_VOICE, rate="-2%")
+                comm = edge_tts.Communicate(script, chosen_voice, rate="-2%")
                 await comm.save(str(voice_path))
             asyncio.run(_synth())
         except Exception as e:
@@ -268,14 +288,16 @@ class Producer:
             worker_manager.report_error("producer", "Insufficient visuals generated")
             return None
 
-        # 3. Concatenate all distinct scene clips with FFmpeg filter_complex
+        # 3. Concatenate all distinct scene clips with FFmpeg filter_complex (Normalizing SAR=1)
         merged_video = self.temp_dir / "merged_scenes.mp4"
         inputs = []
-        filter_parts = []
+        sar_filters = []
+        concat_inputs = []
         for idx, c in enumerate(ready_clips):
             inputs.extend(["-i", str(c)])
-            filter_parts.append(f"[{idx}:v]")
-        filter_str = "".join(filter_parts) + f"concat=n={len(ready_clips)}:v=1:a=0[v]"
+            sar_filters.append(f"[{idx}:v]setsar=1[v{idx}]")
+            concat_inputs.append(f"[v{idx}]")
+        filter_str = ";".join(sar_filters) + ";" + "".join(concat_inputs) + f"concat=n={len(ready_clips)}:v=1:a=0[v]"
 
         cmd_concat = ["ffmpeg", "-y"] + inputs + [
             "-filter_complex", filter_str,
@@ -290,8 +312,15 @@ class Producer:
 
         # 5. Master Documentary Audio & Video Blend
         final_video = self.temp_dir / f"{title_slug}_FINAL.mp4"
-        # Audio mix: Voice at 1.0 volume, Background ambient score at 0.14 volume
-        filter_complex = "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first[a]"
+        # Master Audio & Video Filter:
+        # Video: Color grade + Persistent subtle VOID ARCHIVE watermark + Opening Chapter Badge
+        # Audio: Voice at 1.0 + Looping Ambient Score at 0.14
+        filter_complex = (
+            "[0:v]eq=contrast=1.05:saturation=1.1,"
+            "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
+            "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
+            "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first[a_out]"
+        )
         
         subprocess.run([
             "ffmpeg", "-y",
@@ -300,8 +329,8 @@ class Producer:
             "-i", str(voice_path),
             "-i", str(music_track),
             "-filter_complex", filter_complex,
-            "-map", "0:v",
-            "-map", "[a]",
+            "-map", "[v_out]",
+            "-map", "[a_out]",
             "-t", str(voice_duration),
             "-c:v", "libx264", "-preset", "ultrafast",
             "-c:a", "aac",

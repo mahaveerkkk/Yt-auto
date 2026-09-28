@@ -13,8 +13,7 @@ from googleapiclient.http import MediaFileUpload
 
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/youtube.force-ssl"
+    "https://www.googleapis.com/auth/youtube.readonly"
 ]
 
 
@@ -40,9 +39,23 @@ class Uploader:
             return False
 
         url = f"https://api.telegram.org/bot{self.bot_token}/sendVideo"
-        logger.info(f"[Telegram] Uploading video '{video_path.name}' to Telegram...")
-
         try:
+            size_mb = video_path.stat().st_size / (1024 * 1024)
+            if size_mb > 49.0:
+                logger.info(f"[Telegram] Video size is {size_mb:.1f} MB (exceeds Telegram 50MB bot upload limit). Delivering via message notification.")
+                notice = (
+                    f"🎬 *Full Documentary Master Rendered ({size_mb:.1f} MB)*\n\n"
+                    f"{caption}\n\n"
+                    f"_Note: Master file exceeds Telegram's 50MB direct bot transfer limit. Publishing to YouTube!_"
+                )
+                requests.post(f"https://api.telegram.org/bot{self.bot_token}/sendMessage", json={
+                    "chat_id": self.chat_id,
+                    "text": notice,
+                    "parse_mode": "Markdown"
+                }, timeout=20)
+                return True
+
+            logger.info(f"[Telegram] Uploading video '{video_path.name}' ({size_mb:.1f} MB) to Telegram...")
             with open(video_path, "rb") as video_file:
                 files = {"video": (video_path.name, video_file, "video/mp4")}
                 data = {
@@ -64,8 +77,18 @@ class Uploader:
 
     def get_youtube_service(self):
         """Builds authenticated YouTube Data API v3 service."""
+        token_env = os.getenv("YOUTUBE_TOKEN_JSON")
+        if not self.token_file.exists() and token_env:
+            try:
+                self.token_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.token_file, "w") as tf:
+                    tf.write(token_env)
+                logger.info("[YouTube] Restored youtube_token.json from environment variable.")
+            except Exception as e:
+                logger.warning(f"[YouTube] Could not write token from env: {e}")
+
         if not self.token_file.exists():
-            logger.warning("[YouTube] youtube_token.json not found. Run python authenticate_youtube.py first.")
+            logger.warning("[YouTube] youtube_token.json not found. Run python authenticate_youtube.py first or set YOUTUBE_TOKEN_JSON env var.")
             return None
 
         try:
@@ -142,6 +165,29 @@ class Uploader:
         except Exception as e:
             logger.error(f"[YouTube] Upload failed: {e}")
             return None
+
+    def post_pinned_comment(self, video_id: str, comment_text: str) -> bool:
+        """Posts an engagement starter question as a comment on the published video."""
+        youtube = self.get_youtube_service()
+        if not youtube or not video_id:
+            return False
+        try:
+            body = {
+                "snippet": {
+                    "videoId": video_id,
+                    "topLevelComment": {
+                        "snippet": {
+                            "textOriginal": comment_text
+                        }
+                    }
+                }
+            }
+            youtube.commentThreads().insert(part="snippet", body=body).execute()
+            logger.info(f"💬 Pinned engagement comment posted under YouTube video {video_id}!")
+            return True
+        except Exception as e:
+            logger.warning(f"[YouTube] Auto-comment skipped: {e}")
+            return False
 
 
 uploader = Uploader()

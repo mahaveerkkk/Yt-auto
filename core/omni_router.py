@@ -32,7 +32,7 @@ class OmniRouter:
         self.openrouter_key = settings.OPENROUTER_API_KEY
         self.gemini_key = settings.GEMINI_API_KEY
 
-    def _call_gemini(self, prompt: str, system_prompt: str = "") -> Optional[str]:
+    def _call_gemini(self, prompt: str, system_prompt: str = "", history: Optional[list] = None) -> Optional[str]:
         """Direct Google Gemini Cloud API call using new google-genai SDK."""
         if not self.gemini_key:
             return None
@@ -43,7 +43,15 @@ class OmniRouter:
             from google import genai
             client = genai.Client(api_key=self.gemini_key)
 
-            full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+            history_context = ""
+            if history:
+                history_lines = []
+                for h in history[-8:]:
+                    role = "Veer (Boss)" if h.get("role") == "user" else "CEO"
+                    history_lines.append(f"{role}: {h.get('content', '')}")
+                history_context = "\nRecent Conversation History:\n" + "\n".join(history_lines) + "\n\n"
+
+            full_prompt = f"{system_prompt}\n{history_context}Current Message from Veer:\n{prompt}" if (system_prompt or history_context) else prompt
 
             for model_name in models_to_try:
                 try:
@@ -70,7 +78,7 @@ class OmniRouter:
             logger.warning("[OmniRouter] google-genai SDK not installed")
         return None
 
-    def _call_openrouter(self, prompt: str, system_prompt: str = "") -> Optional[str]:
+    def _call_openrouter(self, prompt: str, system_prompt: str = "", history: Optional[list] = None) -> Optional[str]:
         """OpenRouter free models pool with sequential fallback."""
         if not self.openrouter_key:
             return None
@@ -82,6 +90,9 @@ class OmniRouter:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
+        if history:
+            for h in history[-8:]:
+                messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
         messages.append({"role": "user", "content": prompt})
 
         for model_id in self.OPENROUTER_MODELS:
@@ -108,19 +119,19 @@ class OmniRouter:
                 logger.warning(f"[OmniRouter] {model_id} error: {str(e)[:60]}")
         return None
 
-    def query(self, prompt: str, system_prompt: str = "") -> Optional[str]:
+    def query(self, prompt: str, system_prompt: str = "", history: Optional[list] = None) -> Optional[str]:
         """
         Master query method. Routes through all available cloud models:
         1. Gemini Cloud Direct (fastest, most reliable)
         2. OpenRouter Free Pool (fallback)
         """
         # Priority 1: Gemini Cloud (Direct API, no middleman)
-        result = self._call_gemini(prompt, system_prompt)
+        result = self._call_gemini(prompt, system_prompt, history=history)
         if result:
             return result
 
         # Priority 2: OpenRouter Free Models Pool
-        result = self._call_openrouter(prompt, system_prompt)
+        result = self._call_openrouter(prompt, system_prompt, history=history)
         if result:
             return result
 

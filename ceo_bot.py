@@ -251,6 +251,10 @@ def cmd_produce(topic: str = None):
                     thumb_path=str(thumb_path) if thumb_path else ""
                 )
 
+                # Post engagement starter in YouTube comments
+                comment_text = manifest.get("pinned_comment") or f"What are your theories on {manifest.get('title')}? Share your thoughts below."
+                uploader.post_pinned_comment(video_id, comment_text)
+
                 # Send rich upload success alert
                 duration_sec = producer._get_media_duration(final_video)
                 ceo_comms.send_upload_success_alert(
@@ -276,8 +280,27 @@ def cmd_produce(topic: str = None):
     t.start()
 
 
+# Multi-turn conversational memory for natural dialogue
+conversation_history = []
+
+
 def handle_natural_chat(text: str):
-    """AI-powered natural conversation using OmniRouter with live channel awareness."""
+    """AI-powered natural conversation using OmniRouter with full multi-turn memory."""
+    global conversation_history
+
+    # Check for direct confirmation intent ("ha", "haan", "banao", "start video", etc.)
+    lower = text.lower().strip()
+    affirmative = ["ha", "haan", "haa", "yes", "banao", "bana do", "produce", "start", "shuru karo", "theek hai"]
+    if lower in affirmative or any(lower == a for a in affirmative):
+        if conversation_history:
+            last_bot_msg = next((h["content"] for h in reversed(conversation_history) if h["role"] == "assistant"), "")
+            if any(k in last_bot_msg.lower() for k in ["video", "banao", "banau", "produce", "topic", "documentary"]):
+                send_tg("👑 *CEO:* Order confirmed Boss! Production turant start kar raha hu... 🚀")
+                cmd_produce(topic=None)
+                conversation_history.append({"role": "user", "content": text})
+                conversation_history.append({"role": "assistant", "content": "Order confirmed. Autonomous documentary production initiated."})
+                return
+
     summary = analytics_ceo.get_channel_summary()
     recent = analytics_ceo.get_recent_videos(limit=2)
     recent_info = ""
@@ -290,17 +313,21 @@ def handle_natural_chat(text: str):
         f"Current Channel Status: Channel '{summary.get('channel_name')}', Total Views: {summary.get('total_views')}, Subscribers: {summary.get('subscribers')} (Target: 1,000 for monetization), Videos: {summary.get('video_count')}. {recent_info} "
         f"Our core strategy: Producing 8-12 minute long-form mystery documentaries (Space, Deep Ocean, Ancient Civilizations) to accumulate 4,000 watch hours and unlock mid-roll ads. "
         f"Speak with authority, strategic brilliance, and loyalty in casual Hinglish. "
-        f"Address the user as Boss. Keep responses concise (under 120 words), actionable, and data-backed."
+        f"Address the user as Boss. Remember our previous conversation context. "
+        f"Keep responses concise (under 120 words), actionable, and data-backed."
     )
 
-    send_tg("🤔 _Analyzing channel strategy & metrics..._")
-    reply = omni_router.query(prompt=text, system_prompt=system)
+    reply = omni_router.query(prompt=text, system_prompt=system, history=conversation_history)
 
     if reply:
         clean = reply.strip()
         if clean.startswith("```"):
             clean = clean.split("```")[1] if len(clean.split("```")) > 1 else clean
         send_tg(f"👑 *CEO:*\n{clean[:800]}")
+        conversation_history.append({"role": "user", "content": text})
+        conversation_history.append({"role": "assistant", "content": clean})
+        if len(conversation_history) > 16:
+            conversation_history = conversation_history[-16:]
     else:
         send_tg(
             f"👑 *CEO:*\nBoss, message samajh gaya: _{text}_\n"
@@ -334,9 +361,9 @@ def process_message(text: str):
         cmd_workers()
     elif lower.startswith("/strategy") or lower.startswith("/strat"):
         cmd_strategy()
-    elif lower.startswith("/quota"):
+    elif lower.startswith("/quota") or lower.startswith("/quot"):
         cmd_quota()
-    elif lower.startswith("/trending"):
+    elif lower.startswith("/trending") or lower.startswith("/trend"):
         cmd_trending()
     elif lower.startswith("/analyze"):
         cmd_analyze()
@@ -349,8 +376,37 @@ def process_message(text: str):
         handle_natural_chat(text)
 
 
+def start_healthcheck_server():
+    """Lightweight HTTP server on $PORT to satisfy Railway/Render container healthchecks."""
+    import os
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    port = int(os.getenv("PORT", "8080"))
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok","service":"Void Archive AI CEO"}')
+
+        def log_message(self, format, *args):
+            pass
+
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        logger.info(f"🌐 Healthcheck HTTP server listening on 0.0.0.0:{port} for Railway")
+        server.serve_forever()
+    except Exception as e:
+        logger.warning(f"Could not start healthcheck server on port {port}: {e}")
+
+
 def run_bot():
     logger.info("👑 AutoDirector CEO v3 Autonomous Daemon Starting...")
+
+    # Start Healthcheck HTTP server in background thread for Railway
+    t_health = threading.Thread(target=start_healthcheck_server, daemon=True)
+    t_health.start()
 
     # Start Studio Scheduler
     from core.scheduler import StudioScheduler

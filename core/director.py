@@ -41,6 +41,7 @@ You must output ONLY a valid JSON object without markdown formatting, code ticks
   "title": "A high-CTR, psychological curiosity title under 65 chars (e.g. They Found Something Lurking in the Challenger Deep)",
   "description": "Compelling 3-paragraph SEO documentary synopsis including timestamps and mystery keywords.",
   "hashtags": ["#Mystery", "#DeepSea", "#Documentary", "#VoidArchive", "#Science"],
+  "pinned_comment": "A thought-provoking question for the audience to debate in the comments section.",
   "voice_script": "The complete, continuous, immersive documentary narrative ({target_words} words). Write in rich, cinematic English suitable for a deep authoritative narrator. No scene labels or speaker tags in this text.",
   "scenes": [
     {{
@@ -139,6 +140,10 @@ You must output ONLY a valid JSON object without markdown formatting, code ticks
                 elif "```" in clean_json:
                     clean_json = clean_json.split("```")[1].split("```")[0].strip()
 
+                match = re.search(r'(\{[\s\S]*\})', clean_json)
+                if match:
+                    clean_json = match.group(1)
+
                 parsed = json.loads(clean_json)
                 if "title" in parsed and "scenes" in parsed and "voice_script" in parsed:
                     logger.info(f"[Director] ✅ Successfully drafted documentary: '{parsed['title']}' ({len(parsed['scenes'])} scenes)")
@@ -162,6 +167,7 @@ You must output ONLY a valid JSON object without markdown formatting, code ticks
                 f"Subscribe to Void Archive for more investigative records."
             ),
             "hashtags": ["#Mystery", "#OceanAbyss", "#Documentary", "#VoidArchive", "#Science"],
+            "pinned_comment": f"Do you believe the mystery of {chosen_topic} was natural, or is something deliberate being hidden? Share your theory below.",
             "voice_script": (
                 f"For decades, the deepest trenches of our oceans remained a silent, frozen frontier. "
                 f"Yet in the remote coordinates of {chosen_topic}, underwater surveillance arrays detected an anomaly. "

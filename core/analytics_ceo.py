@@ -14,35 +14,51 @@ class AnalyticsCEO:
 
     def __init__(self):
         self.stats_file = settings.BASE_DIR / "logs" / "video_analytics.json"
+        self._cached_summary = None
+        self._cache_time = 0
+        self._cached_recent = None
+        self._recent_time = 0
 
-    def get_channel_summary(self) -> Dict[str, Any]:
-        """Fetches total channel views, subscriber count, and video count."""
+    def get_channel_summary(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """Fetches total channel views, subscriber count, and video count (cached for 15 mins)."""
+        import time
+        if not force_refresh and self._cached_summary and (time.time() - self._cache_time < 900):
+            return self._cached_summary
+
         service = uploader.get_youtube_service()
         if not service:
-            return {"error": "YouTube API not connected"}
+            return self._cached_summary or {"error": "YouTube API not connected"}
 
         try:
             res = service.channels().list(mine=True, part="snippet,statistics").execute()
             items = res.get("items", [])
             if not items:
-                return {"error": "Channel not found"}
+                return self._cached_summary or {"error": "Channel not found"}
 
             ch = items[0]
             stats = ch.get("statistics", {})
             snippet = ch.get("snippet", {})
-            return {
+            self._cached_summary = {
                 "channel_name": snippet.get("title", "Void Archive"),
                 "total_views": stats.get("viewCount", "0"),
                 "subscribers": stats.get("subscriberCount", "0"),
                 "video_count": stats.get("videoCount", "0")
             }
+            self._cache_time = time.time()
+            return self._cached_summary
         except Exception as e:
             logger.error(f"[Analytics] Failed to fetch channel summary: {e}")
-            return {"error": str(e)}
+            return self._cached_summary or {"error": str(e)}
 
-    def get_recent_videos(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Fetches the latest videos uploaded to the channel with their view counts."""
+    def get_recent_videos(self, limit: int = 5, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """Fetches the latest videos uploaded to the channel (cached for 15 mins)."""
+        import time
+        if not force_refresh and self._cached_recent and (time.time() - self._recent_time < 900):
+            return self._cached_recent
+
         service = uploader.get_youtube_service()
+        if not service:
+            return self._cached_recent or []
         if not service:
             return []
 

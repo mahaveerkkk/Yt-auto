@@ -43,12 +43,24 @@ class ThumbnailDesigner:
                 logger.warning(f"[Thumbnail] Pollinations thumb timeout: {e}")
 
             if not downloaded:
-                # Use scene 1 generated image as fallback base
-                scene_1 = Path("/tmp/autodirector_production/scene_1.jpg")
-                if scene_1.exists():
+                scene_1_jpg = Path("/tmp/autodirector_production/scene_1.jpg")
+                scene_1_mp4 = Path("/tmp/autodirector_production/clip_1.mp4")
+                if scene_1_jpg.exists():
                     import shutil
-                    shutil.copy(scene_1, base_img)
+                    shutil.copy(scene_1_jpg, base_img)
                     downloaded = True
+                elif scene_1_mp4.exists():
+                    # Extract high-definition frame from video clip
+                    cmd_extract = [
+                        "ffmpeg", "-y", "-ss", "00:00:01",
+                        "-i", str(scene_1_mp4),
+                        "-vframes", "1",
+                        "-q:v", "2",
+                        str(base_img)
+                    ]
+                    subprocess.run(cmd_extract, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if base_img.exists():
+                        downloaded = True
                 else:
                     return None
 
