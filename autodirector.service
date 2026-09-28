@@ -1,0 +1,16 @@
+[Unit]
+Description=AutoDirector AI Channel CEO 24/7 Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=veer
+WorkingDirectory=/home/veer/Desktop/experiment
+ExecStart=/home/veer/Desktop/experiment/venv/bin/python3 /home/veer/Desktop/experiment/ceo_bot.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/veer/Desktop/experiment/logs/ceo_daemon.log
+StandardError=append:/home/veer/Desktop/experiment/logs/ceo_daemon.log
+
+[Install]
+WantedBy=multi-user.target
