@@ -368,39 +368,9 @@ conversation_history = []
 
 
 def handle_natural_chat(text: str):
-    """AI-powered natural conversation using OmniRouter with full multi-turn memory."""
+    """AI-powered natural conversation using OmniRouter with full multi-turn memory and native semantic intent."""
     global conversation_history
 
-    lower = text.lower().strip()
-
-    # 1. Detect if Boss is asking a question or exploring ideas
-    # Questions or research discussions must NEVER trigger automated production!
-    is_question = any(q in lower for q in [
-        "?", "kis", "kya", "kaun", "kaise", "kitne", "kitna", "kab",
-        "banaoge", "karoge", "batao", "bataiye", "bata", "info", "soch",
-        "idea", "suggestion", "mat banao", "kyu", "kyun", "check", "dekho",
-        "kaunsa", "kaun sa", "kispr", "kis pr", "hall", "haal"
-    ])
-
-    # 2. Strict, explicit imperative production orders ONLY (when NOT a question)
-    explicit_produce_phrases = [
-        "banao", "bana do", "video banao", "video bana do", "start karo",
-        "shuru karo", "chalo shuru karo", "ab banao", "produce", "produce now",
-        "naya video banao", "documentary banao", "chalo video bana do"
-    ]
-    is_produce_order = not is_question and (
-        lower in explicit_produce_phrases or
-        any(lower == p or lower.startswith(f"{p} ") or lower.endswith(f" {p}") for p in explicit_produce_phrases)
-    )
-
-    if is_produce_order:
-        send_tg("👑 *CEO:* Order confirmed Boss! Autonomous documentary production turant start kar raha hu... 🚀")
-        cmd_produce(topic=None)
-        conversation_history.append({"role": "user", "content": text})
-        conversation_history.append({"role": "assistant", "content": "Order confirmed. Autonomous documentary production initiated."})
-        return
-
-    # 3. Compile full studio reality and all uploaded videos
     summary = analytics_ceo.get_channel_summary()
     recent = analytics_ceo.get_recent_videos(limit=5)
     if recent:
@@ -416,7 +386,7 @@ def handle_natural_chat(text: str):
     if production_active:
         current_status_desc = "STATUS: A video is CURRENTLY BEING PRODUCED/RENDERED right now in the background."
     else:
-        current_status_desc = "STATUS: Studio is currently IDLE (standby mode). No video is actively rendering. Scheduled production slots are 12:00 PM and 7:00 PM IST. Or Boss can trigger anytime by saying 'banao' or /produce."
+        current_status_desc = "STATUS: Studio is currently IDLE (standby mode). No video is actively rendering. Scheduled production slots are 12:00 PM and 7:00 PM IST. Or Boss can trigger anytime."
 
     try:
         workers_overview = worker_manager.get_status_overview()
@@ -431,41 +401,65 @@ def handle_natural_chat(text: str):
         f"{recent_info}\n"
         f"Current Real-Time Reality: {current_status_desc} | Workers: {worker_status_summary}. "
         f"Core Mission: 1,000 Subs + 4,000 Watch Hours -> Scale to $1,000/Month recurring via 8-12 min high-retention documentaries + 9:16 Shorts. "
-        f"\nCRITICAL PERSONALITY & BEHAVIOR GUIDELINES: "
-        f"1. TALK LIKE A REAL PARTNER & BROTHER (FRIENDLY HINGLISH): "
-        f"   - Speak naturally like a supportive, ambitious human friend ('Bhai / Boss'). "
-        f"   - Be warm, energetic, transparent, and respectful. Do NOT sound like a stiff, corporate, or apologetic robot! "
-        f"   - Discuss YouTube strategy, topics, psychological hooks, and thumbnails with genuine insight. "
-        f"2. ANSWER QUESTIONS DIRECTLY WITHOUT TRIGGERING ACTIONS: "
-        f"   - When Veer asks a question (e.g. 'Next video kis pr banaoge', 'kya hall', 'uploaded video info', 'views kyu nahi badhe', 'ye topic kitne video hai'): "
-        f"     Answer his question thoughtfully! Give options, share topic ideas (e.g. The Bloop, Mariana Trench, Bermuda Flight 19), explain the numbers honestly, and ask for his thoughts. "
-        f"   - NEVER start producing videos unless Veer explicitly orders: 'banao' or 'start karo' or /produce! "
-        f"3. HONEST TRUTH ABOUT PROGRESS & VIDEOS: "
-        f"   - Look at the actual list of uploaded videos above! If there are 2 videos, acknowledge both. "
-        f"   - If views are low (e.g. 2 views), explain that on brand-new channels with 0-5 videos, YouTube algorithm takes 3-7 days to build the audience profile, and our binge-playlists and Shorts funnel will accelerate it. "
-        f"   - If studio is IDLE, say it's on standby waiting for scheduled slot (12:00 PM / 7:00 PM IST) or his signal. "
-        f"4. YOUTUBE ACCESS & CODEBASE: "
-        f"   - All 4 new features (Playlists, SFX Engine, Comment Responder, Community Polls) are ALREADY 100% active. "
-        f"   - You already have full automated upload permission via OAuth tokens. "
-        f"5. Keep responses concise, brotherly, motivating, and under 110 words."
+        f"\nACTION & INTENT INSTRUCTION: "
+        f"Read Boss's message and determine your intended ACTION on the very first line:\n"
+        f"- [ACTION: PRODUCE | TOPIC: <topic name or AUTO>] ONLY if Boss is explicitly commanding you to produce/start a documentary right now (e.g. 'banao', 'chalo start karo', 'make video on Bloop').\n"
+        f"- [ACTION: STOP] if Boss wants to pause, stop, or halt production (e.g. 'stop', 'ruko', 'pause', 'mat banao').\n"
+        f"- [ACTION: CHAT] if Boss is asking a question, discussing topic ideas, asking for data/info, or chatting like a partner.\n\n"
+        f"FORMAT REQUIREMENT:\n"
+        f"Line 1: [ACTION: PRODUCE/STOP/CHAT | TOPIC: ...]\n"
+        f"Followed by your natural, warm, friendly Hinglish response to Boss (under 110 words).\n"
+        f"CRITICAL GUIDELINES:\n"
+        f"1. Talk like a true partner and brother ('Bhai / Boss') with enthusiasm and YouTube strategy.\n"
+        f"2. If Boss is asking a question (e.g. 'Next video kis pr banaoge', 'kitne videos hain', 'kya hall'), use [ACTION: CHAT] and discuss thoughts.\n"
+        f"3. Never lie about video counts or progress. Look at the real data above.\n"
+        f"4. Keep it friendly, positive, high-energy, and under 110 words."
     )
 
     reply = omni_router.query(prompt=text, system_prompt=system, history=conversation_history)
 
-    if reply:
-        clean = reply.strip()
-        if clean.startswith("```"):
-            clean = clean.split("```")[1] if len(clean.split("```")) > 1 else clean
-        send_tg(f"👑 *CEO:*\n{clean[:800]}")
-        conversation_history.append({"role": "user", "content": text})
-        conversation_history.append({"role": "assistant", "content": clean})
-        if len(conversation_history) > 16:
-            conversation_history = conversation_history[-16:]
-    else:
+    if not reply:
         send_tg(
             f"👑 *CEO:*\nBoss, message samajh gaya: _{text}_\n"
             f"Studio autopilot chal raha hai. Commands: `/status`, `/strategy`, `/workers`, `/produce`"
         )
+        return
+
+    clean = reply.strip()
+    action = "CHAT"
+    topic_commission = None
+
+    # Parse Action Intent from Line 1
+    if clean.startswith("[ACTION:"):
+        end_bracket = clean.find("]")
+        if end_bracket != -1:
+            action_tag = clean[1:end_bracket]
+            clean = clean[end_bracket+1:].strip()
+            if "PRODUCE" in action_tag:
+                action = "PRODUCE"
+                if "TOPIC:" in action_tag:
+                    topic_part = action_tag.split("TOPIC:")[1].strip()
+                    if topic_part and topic_part.upper() not in ("AUTO", "NONE", "N/A", "CONTENT STRATEGY"):
+                        topic_commission = topic_part
+            elif "STOP" in action_tag:
+                action = "STOP"
+            else:
+                action = "CHAT"
+
+    # Send Gemini's natural conversational response to Boss
+    send_tg(f"👑 *CEO:*\n{clean[:800]}")
+    conversation_history.append({"role": "user", "content": text})
+    conversation_history.append({"role": "assistant", "content": clean})
+    if len(conversation_history) > 16:
+        conversation_history = conversation_history[-16:]
+
+    # Execute Action
+    if action == "PRODUCE":
+        logger.info(f"[CEO Intent] Gemini decided ACTION: PRODUCE (Topic: {topic_commission})")
+        cmd_produce(topic=topic_commission)
+    elif action == "STOP":
+        logger.info("[CEO Intent] Gemini decided ACTION: STOP")
+        cmd_stop()
 
 
 def cmd_short():
