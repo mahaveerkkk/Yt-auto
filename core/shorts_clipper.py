@@ -56,12 +56,13 @@ class ShortsClipper:
         # 5. Audio: fade-out at the end
         fade_start = max(1, duration_sec - 2)
 
+        # Lightweight 720x1280 vertical standard format (prevents Linux OOM SIGKILL -9)
         filter_graph = (
-            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5[bg];"
-            f"[0:v]scale=1080:-1[fg];"
+            f"[0:v]scale=360:640:force_original_aspect_ratio=increase,crop=360:640,boxblur=6:1,scale=720:1280[bg];"
+            f"[0:v]scale=720:-1[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
-            f"[base]drawtext=font='DejaVu Sans':text='VOID ARCHIVE | CLASSIFIED':fontcolor=white:fontsize=44:x=(w-text_w)/2:y=220:box=1:boxcolor=black@0.65:boxborderw=12,"
-            f"drawtext=font='DejaVu Sans':text='FULL INVESTIGATION ON CHANNEL 👇':fontcolor=yellow:fontsize=36:x=(w-text_w)/2:y=h-260:box=1:boxcolor=black@0.65:boxborderw=10[v];"
+            f"[base]drawtext=text='VOID ARCHIVE | CLASSIFIED':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=140:box=1:boxcolor=black@0.65:boxborderw=8,"
+            f"drawtext=text='FULL INVESTIGATION ON CHANNEL 👇':fontcolor=yellow:fontsize=26:x=(w-text_w)/2:y=h-180:box=1:boxcolor=black@0.65:boxborderw=8[v];"
             f"[0:a]afade=t=out:st={fade_start}:d=2[a]"
         )
 
@@ -74,10 +75,10 @@ class ShortsClipper:
             "-map", "[v]",
             "-map", "[a]",
             "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "22",
+            "-preset", "veryfast",
+            "-crf", "23",
             "-c:a", "aac",
-            "-b:a", "192k",
+            "-b:a", "128k",
             str(out_short_path)
         ]
 
