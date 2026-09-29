@@ -43,6 +43,7 @@ API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # Global production states
 production_active = False
 production_cancel_requested = False
+selected_thumb_choice = None
 
 
 def send_tg(text: str, parse_mode: str = "Markdown"):
@@ -218,22 +219,53 @@ def cmd_produce(topic: str = None):
                 send_tg("❌ Documentary assembly failed. Review logs for details.")
                 return
 
-            # Step 4: Thumbnail Creation
-            send_tg("🖼️ *Thumbnail Designer:* Creating high-contrast click-magnet cover...")
-            worker_manager.start_task("thumbnail", "Generating thumbnail visual")
+            # Step 4: Dual Thumbnail Creation (Option A vs Option B)
+            worker_manager.start_task("thumbnail", "Generating dual thumbnail concepts (Option A & B)")
             hook = title[:20]
             thumb_prompt = manifest["scenes"][0]["prompt"] if manifest.get("scenes") else title
-            thumb_path = thumbnail_designer.generate_thumbnail(title, hook, thumb_prompt)
-            worker_manager.complete_task("thumbnail", "Thumbnail generated")
+            thumbs = thumbnail_designer.generate_dual_thumbnails(title, hook, thumb_prompt, category=topic_info.get("category", "Mystery"))
+            thumb_a = thumbs.get("thumb_a")
+            thumb_b = thumbs.get("thumb_b")
+            worker_manager.complete_task("thumbnail", "Dual thumbnails ready")
 
             if production_cancel_requested:
                 send_tg("🛑 Production cancelled before upload.")
                 return
 
-            # Step 5: Deliver to Telegram
+            # Dispatch Option A and Option B photos to Telegram for Boss review
+            if thumb_a and thumb_a.exists():
+                send_tg_photo(thumb_a, "🖼️ *Thumbnail Option A (Macro Close-Up Intrigue)*\nTap `/pick A` to choose this cover.")
+            if thumb_b and thumb_b.exists():
+                send_tg_photo(thumb_b, "🖼️ *Thumbnail Option B (Cinematic Scale & Dread)*\nTap `/pick B` to choose this cover.")
+
+            send_tg(
+                "⏱️ *10-Minute Cover Selection Window:*\n"
+                "Boss, aap `/pick A` ya `/pick B` bhej sakte hain.\n"
+                "_Agar aap busy hain ya reply nahi dete, toh AI automatically Option A select karke upload kar dega (Video rukegi nahi)!_"
+            )
+
+            # 10-Minute Non-blocking countdown window (checks every 2 seconds, max 600s)
+            global selected_thumb_choice
+            selected_thumb_choice = None
+            wait_elapsed = 0
+            while wait_elapsed < 600 and not production_cancel_requested:
+                if selected_thumb_choice in ("A", "B"):
+                    break
+                time.sleep(2)
+                wait_elapsed += 2
+
+            if selected_thumb_choice == "B" and thumb_b and thumb_b.exists():
+                active_thumb = thumb_b
+                send_tg("🎯 *Cover Locked:* Using *Option B* for YouTube upload!")
+            else:
+                active_thumb = thumb_a or thumb_b
+                if selected_thumb_choice == "A":
+                    send_tg("🎯 *Cover Locked:* Using *Option A* for YouTube upload!")
+                else:
+                    send_tg("⏰ *Window expired:* Auto-selected *Option A* (highest predicted CTR). Uploading now...")
+
+            # Step 5: Deliver video preview to Telegram
             caption = f"🎬 *{manifest.get('title')}*\n\n{manifest.get('description', '')}\n\n{' '.join(manifest.get('hashtags', []))}"
-            if thumb_path and thumb_path.exists():
-                send_tg_photo(thumb_path, "🖼️ *Thumbnail Preview*")
             uploader.send_to_telegram(final_video, caption)
 
             # Step 6: 100% PUBLIC YouTube Upload
@@ -244,7 +276,7 @@ def cmd_produce(topic: str = None):
                 final_video,
                 manifest,
                 privacy_status="public",  # PUBLIC UPLOAD
-                thumbnail_path=thumb_path
+                thumbnail_path=active_thumb
             )
 
             if yt_url:
@@ -452,11 +484,23 @@ def process_message(text: str):
             "🔥 `/trending` — Top candidate viral topics\n"
             "🎬 `/produce` — Autonomous long-form documentary (8-12 min)\n"
             "🎯 `/produce [topic]` — Custom commissioned documentary\n"
+            "🖼️ `/pick A` or `/pick B` — Choose documentary thumbnail\n"
             "⚡ `/short` — Generate instant 9:16 viral Short\n"
             "📈 `/analyze` — Latest video post-mortem\n"
             "🛑 `/stop` — Cancel active production\n\n"
             "Ya seedha koi bhi baat karo mujhse! 💬"
         )
+    elif lower.startswith("/pick"):
+        global selected_thumb_choice
+        choice = lower.replace("/pick", "").strip().upper()
+        if "B" in choice:
+            selected_thumb_choice = "B"
+            send_tg("🎯 *Cover Selection Registered:* Option B will be used for YouTube upload!")
+        elif "A" in choice:
+            selected_thumb_choice = "A"
+            send_tg("🎯 *Cover Selection Registered:* Option A will be used for YouTube upload!")
+        else:
+            send_tg("ℹ️ Usage: `/pick A` ya `/pick B`")
     elif lower.startswith("/status") or lower.startswith("/stat"):
         cmd_status()
     elif lower.startswith("/worker"):

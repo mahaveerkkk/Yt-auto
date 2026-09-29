@@ -29,6 +29,7 @@ class StudioScheduler:
         self.notify_callback = notify_callback
         self.running = False
         self.last_briefing_date = None
+        self.last_cleanup_date = None
         self.last_production_hour = None
         self.last_ab_check_time = 0
         self.last_comment_check_time = 0
@@ -47,6 +48,16 @@ class StudioScheduler:
                 today_str = now.strftime("%Y-%m-%d")
                 curr_hour = now.hour
                 curr_minute = now.minute
+
+                # 0. Daily 04:00 AM IST Disk Hygiene & Pruning
+                if curr_hour == 4 and self.last_cleanup_date != today_str:
+                    try:
+                        from utils.cleanup import prune_disk_hygiene
+                        stats = prune_disk_hygiene(max_age_hours=48)
+                        logger.info(f"[Scheduler] Daily 04:00 AM Disk Hygiene executed: {stats}")
+                        self.last_cleanup_date = today_str
+                    except Exception as cle:
+                        logger.warning(f"[Scheduler] Disk hygiene error: {cle}")
 
                 # 1. Morning Executive Briefing (08:30 AM IST)
                 if curr_hour == self.MORNING_BRIEFING_HOUR and curr_minute >= 30 and self.last_briefing_date != today_str:

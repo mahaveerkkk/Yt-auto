@@ -128,8 +128,38 @@ class Director:
             ]
         }
 
+    def _calculate_video_chapters(self, word_count: int, topic: str) -> List[Dict[str, str]]:
+        """
+        Calculates exact YouTube chapters and clickable timestamps based on voiceover duration.
+        YouTube requires:
+        - First timestamp must start at 00:00
+        - At least 3 timestamps in ascending order
+        - Minimum 10 seconds per chapter
+        """
+        total_seconds = max(360, int((word_count / 135) * 60))
+        clean_name = topic.replace("The ", "").replace("the ", "").strip()[:22]
+
+        milestones = [
+            (0.00, f"The Classified {clean_name} Anomaly"),
+            (0.18, "Subsurface Acoustic & Telemetry Records"),
+            (0.42, "Deep Field Exploration & Physical Evidence"),
+            (0.68, "Competing Theories: Biological vs Geological"),
+            (0.88, "The Unresolved Verdict & Ongoing Enigma"),
+            (0.96, "Investigation Concluded // Next Dossier")
+        ]
+
+        chapters = []
+        for pct, title in milestones:
+            t = int(total_seconds * pct)
+            mins = t // 60
+            secs = t % 60
+            timestamp = f"{mins:02d}:{secs:02d}"
+            chapters.append({"time": timestamp, "title": title})
+
+        return chapters
+
     def generate_manifest(self, topic: Optional[str] = None, target_duration_sec: int = 540) -> Dict[str, Any]:
-        """Generates full documentary production manifest guaranteed to produce 8-12 minute videos."""
+        """Generates full documentary production manifest guaranteed to produce 8-12 minute videos with SEO timestamps."""
         chosen_topic = topic or "The Mariana Trench Challenger Deep Metallic Sound"
         worker_manager.start_task("director", f"Directing 8-10 min screenplay for '{chosen_topic}'")
 
@@ -148,16 +178,29 @@ class Director:
         # Stage 2: Metadata & Visual Scenes
         if narrative and len(narrative.split()) >= 600:
             metadata = self._generate_metadata_and_scenes(chosen_topic, narrative)
+            words = len(narrative.split())
+            chapters = self._calculate_video_chapters(words, chosen_topic)
+            chapter_str = "\n".join([f"{c['time']} - {c['title']}" for c in chapters])
+
+            desc = metadata.get("description", "").strip()
+            final_desc = (
+                f"{desc}\n\n"
+                f"⏱️ CLASSIFIED TIMESTAMPS:\n"
+                f"{chapter_str}\n\n"
+                f"🔎 Category: Science & Unsolved Mysteries (Public Dossier)\n"
+                f"📡 Subscribe to Void Archive for weekly declassified investigations."
+            )
+
             manifest = {
                 "title": metadata.get("title", f"The Terrifying Secret of {chosen_topic}"),
-                "description": metadata.get("description", ""),
+                "description": final_desc,
                 "hashtags": metadata.get("hashtags", ["#Mystery", "#Documentary"]),
-                "pinned_comment": metadata.get("pinned_comment", "Share your thoughts below."),
+                "pinned_comment": f"⏱️ TIMESTAMPS:\n{chapter_str}\n\n💬 Discussion: {metadata.get('pinned_comment', 'What do you believe actually occurred? Share your theory below.')}",
                 "voice_script": narrative,
-                "scenes": metadata.get("scenes", [])
+                "scenes": metadata.get("scenes", []),
+                "chapters": chapters
             }
-            words = len(narrative.split())
-            logger.info(f"[Director] ✅ Master Documentary Screenplay ready: '{manifest['title']}' ({words} words, ~{words/135:.1f} mins)")
+            logger.info(f"[Director] ✅ Master Documentary Screenplay ready: '{manifest['title']}' ({words} words, ~{words/135:.1f} mins, {len(chapters)} chapters)")
             worker_manager.complete_task("director", f"Screenplay complete ({words} words, {len(manifest['scenes'])} scenes)")
             return manifest
 
@@ -207,16 +250,29 @@ class Director:
         )
 
         metadata = self._generate_metadata_and_scenes(chosen_topic, fallback_narrative)
+        words = len(fallback_narrative.split())
+        chapters = self._calculate_video_chapters(words, chosen_topic)
+        chapter_str = "\n".join([f"{c['time']} - {c['title']}" for c in chapters])
+
+        desc = metadata.get("description", "").strip()
+        final_desc = (
+            f"{desc}\n\n"
+            f"⏱️ CLASSIFIED TIMESTAMPS:\n"
+            f"{chapter_str}\n\n"
+            f"🔎 Category: Science & Unsolved Mysteries (Public Dossier)\n"
+            f"📡 Subscribe to Void Archive for weekly declassified investigations."
+        )
+
         manifest = {
             "title": f"The Terrifying Secret Behind {chosen_topic[:45]}",
-            "description": metadata.get("description", ""),
+            "description": final_desc,
             "hashtags": metadata.get("hashtags", ["#Mystery", "#Documentary"]),
-            "pinned_comment": metadata.get("pinned_comment", "Share your theory in the comments."),
+            "pinned_comment": f"⏱️ TIMESTAMPS:\n{chapter_str}\n\n💬 Discussion: {metadata.get('pinned_comment', 'Share your theory in the comments.')}",
             "voice_script": fallback_narrative,
-            "scenes": metadata.get("scenes", [])
+            "scenes": metadata.get("scenes", []),
+            "chapters": chapters
         }
-        words = len(fallback_narrative.split())
-        logger.info(f"[Director] 🛡️ Master Long-Form Fallback Deployed: {words} words (~{words/135:.1f} mins)")
+        logger.info(f"[Director] 🛡️ Master Long-Form Fallback Deployed: {words} words (~{words/135:.1f} mins, {len(chapters)} chapters)")
         worker_manager.complete_task("director", f"Fallback screenplay ready ({words} words)")
         return manifest
 

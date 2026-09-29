@@ -393,15 +393,12 @@ class Producer:
         final_duration = self._get_media_duration(final_video)
         logger.info(f"🎉 MASTER DOCUMENTARY COMPLETE! Duration: {final_duration:.1f}s | Path: {final_video}")
 
-        # Cleanup intermediate clips
-        for c in ready_clips:
-            try:
-                if c.exists() and c != final_video:
-                    c.unlink()
-            except Exception:
-                pass
-        if merged_video.exists():
-            merged_video.unlink()
+        # Cleanup intermediate clips and scene frames immediately
+        try:
+            from utils.cleanup import cleanup_intermediate_production
+            cleanup_intermediate_production(keep_path=final_video)
+        except Exception as cle:
+            logger.debug(f"[Producer] Intermediate cleanup: {cle}")
 
         worker_manager.complete_task("producer", f"Master video generated ({final_duration:.1f}s)")
         return final_video
