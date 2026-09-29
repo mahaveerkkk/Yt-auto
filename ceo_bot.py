@@ -47,6 +47,9 @@ production_cancel_requested = False
 selected_thumb_choice = None
 thumb_pick_event = threading.Event()
 waiting_for_thumb_pick = False
+active_production_topic = None
+last_production_error = None
+last_production_topic = None
 
 
 def send_tg(text: str, parse_mode: str = "Markdown"):
@@ -76,7 +79,12 @@ def cmd_status():
         return
 
     health = watchdog.get_system_health()
-    state = "🔴 Producing Long-Form Documentary..." if production_active else "🟢 Standing By (Autopilot Active)"
+    if production_active:
+        state = f"🔴 Producing: '{active_production_topic or 'Documentary'}'..."
+    elif last_production_error:
+        state = f"⚠️ Idle (Last error on '{last_production_topic}': {last_production_error[:50]}...)"
+    else:
+        state = "🟢 Standing By (Autopilot Active)"
 
     send_tg(
         f"👑 *Void Archive — CEO Dashboard v3*\n\n"
@@ -174,7 +182,7 @@ def cmd_stop():
 
 def cmd_produce(topic: str = None):
     """Full autonomous 8-12 minute documentary production pipeline."""
-    global production_active, production_cancel_requested
+    global production_active, production_cancel_requested, active_production_topic, last_production_error, last_production_topic
 
     if production_active:
         send_tg("⚠️ Ek video pehle se ban rahi hai! `/stop` se cancel karo ya wait karo.")
@@ -182,9 +190,12 @@ def cmd_produce(topic: str = None):
 
     production_active = True
     production_cancel_requested = False
+    active_production_topic = topic or "Scouting Topic..."
+    last_production_topic = active_production_topic
+    last_production_error = None
 
     def _production_task():
-        global production_active, production_cancel_requested
+        global production_active, production_cancel_requested, active_production_topic, last_production_error, last_production_topic
         try:
             # Step 1: Scout Topic
             if production_cancel_requested:
@@ -193,6 +204,8 @@ def cmd_produce(topic: str = None):
             if production_cancel_requested:
                 return
             title = topic_info["topic"]
+            active_production_topic = title
+            last_production_topic = title
             decision = ai_brain.synthesize_topic_decision(topic_info)
             target_duration = decision["target_duration_sec"]
 
@@ -359,11 +372,13 @@ def cmd_produce(topic: str = None):
 
         except Exception as e:
             logger.error(f"[CEO Production Error]: {e}", exc_info=True)
+            last_production_error = str(e)[:180]
             worker_manager.report_error("producer", str(e)[:150])
             send_tg(f"❌ *Production Issue Encountered:* {str(e)[:180]}")
         finally:
             production_active = False
             production_cancel_requested = False
+            active_production_topic = None
 
     t = threading.Thread(target=_production_task, daemon=True)
     t.start()
@@ -390,7 +405,14 @@ def handle_natural_chat(text: str):
 
     # Ground truth: Exact live studio status
     if production_active:
-        current_status_desc = "STATUS: A video is CURRENTLY BEING PRODUCED/RENDERED right now in the background."
+        current_status_desc = f"STATUS: A video is CURRENTLY BEING PRODUCED/RENDERED right now (Topic: '{active_production_topic}'). Be honest with Boss about active rendering."
+    elif last_production_error:
+        current_status_desc = (
+            f"STATUS: Studio is currently IDLE. The last production attempt on '{last_production_topic}' "
+            f"STOPPED because it hit an error: '{last_production_error}'. "
+            f"CRITICAL RULE: Be 100% honest and transparent with Boss! DO NOT lie or claim that production is still running in background. "
+            f"Acknowledge the error directly, explain that the issue has been resolved, and ask Boss if he wants to start production now."
+        )
     else:
         current_status_desc = "STATUS: Studio is currently IDLE (standby mode). No video is actively rendering. Scheduled production slots are 12:00 PM and 7:00 PM IST. Or Boss can trigger anytime."
 

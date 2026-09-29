@@ -169,18 +169,19 @@ class Producer:
                         with open(raw_stock, "wb") as f:
                             f.write(v_res.content)
 
-                        # Conform to 1280x720, exact scene duration, 30fps
+                        # Conform to 1280x720, exact scene duration, 30fps, no audio, SAR=1
                         cmd = [
                             "ffmpeg", "-y",
                             "-stream_loop", "-1",
                             "-i", str(raw_stock),
                             "-t", str(duration),
-                            "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+                            "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,setsar=1",
                             "-r", "30",
-                            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                            "-an",  # Strip audio track from stock footage to prevent concat audio stream conflicts
+                            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
                             str(target_path)
                         ]
-                        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
                         if raw_stock.exists():
                             raw_stock.unlink()
                         logger.info(f"✅ Distinct HD Stock Clip ready (ID: {v_item.get('id')})!")
@@ -213,8 +214,8 @@ class Producer:
         else:
             base_pan = f"zoompan=z=1.15:d={frames}:x='iw/2-(iw/zoom/2)':y='if(lte(on,1),(ih-ih/zoom)/4,y+0.6)':s=1280x720:fps=30"
 
-        # Archival film grading: dark vignette + subtle contrast & saturation boost + fine film grain
-        vf = f"{base_pan},vignette=PI/4,eq=contrast=1.08:saturation=1.12,noise=alls=6:allf=t+u"
+        # Archival film grading: setsar=1 + dark vignette + subtle contrast & saturation boost + fine film grain
+        vf = f"{base_pan},setsar=1,vignette=PI/4,eq=contrast=1.08:saturation=1.12,noise=alls=6:allf=t+u"
 
         cmd = [
             "ffmpeg", "-y", "-loop", "1",
@@ -222,10 +223,14 @@ class Producer:
             "-vf", vf,
             "-t", str(duration),
             "-r", "30",
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-an",
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
             str(out_clip)
         ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
+        except Exception as e:
+            logger.warning(f"[Producer] 3D motion render failed for {img_path}: {e}")
 
     def _generate_outro_clip(self, target_path: Path, duration: float = 12.0) -> bool:
         """
@@ -240,18 +245,19 @@ class Producer:
                 "shadowcolor=black:shadowx=3:shadowy=3,"
                 "drawtext=text='CHOOSE NEXT CLASSIFIED DOSSIER':fontcolor=yellow:fontsize=36:x=(w-text_w)/2:y=(h-text_h)/2+30:"
                 "shadowcolor=black:shadowx=2:shadowy=2,"
-                "vignette=PI/3,noise=alls=10:allf=t+u"
+                "vignette=PI/3,noise=alls=10:allf=t+u,setsar=1"
             )
             cmd = [
                 "ffmpeg", "-y",
-                "-f", "lavfi", "-i", f"color=c=black:s=1280x720:d={duration}",
+                "-f", "lavfi", "-i", f"color=c=black:s=1280x720:d={duration}:r=30",
                 "-vf", draw_text,
                 "-t", str(duration),
                 "-r", "30",
-                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                "-an",
+                "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
                 str(target_path)
             ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
             return target_path.exists()
         except Exception as e:
             logger.warning(f"[Producer] Outro slate generation error: {e}")
@@ -343,24 +349,39 @@ class Producer:
         if self._generate_outro_clip(outro_clip, duration=12.0):
             ready_clips.append(outro_clip)
 
-        # 3. Concatenate all distinct scene clips with FFmpeg filter_complex (Normalizing SAR=1)
+        # 3. Concatenate all distinct scene clips cleanly using Concat Demuxer
         merged_video = self.temp_dir / "merged_scenes.mp4"
-        inputs = []
-        sar_filters = []
-        concat_inputs = []
-        for idx, c in enumerate(ready_clips):
-            inputs.extend(["-i", str(c)])
-            sar_filters.append(f"[{idx}:v]setsar=1[v{idx}]")
-            concat_inputs.append(f"[v{idx}]")
-        filter_str = ";".join(sar_filters) + ";" + "".join(concat_inputs) + f"concat=n={len(ready_clips)}:v=1:a=0[v]"
+        valid_clips = [c for c in ready_clips if c and c.exists() and c.stat().st_size > 1000]
+        if len(valid_clips) < 2:
+            logger.error("[Producer] Insufficient valid visual clips assembled.")
+            worker_manager.report_error("producer", "Insufficient visuals generated")
+            return None
 
-        cmd_concat = ["ffmpeg", "-y"] + inputs + [
-            "-filter_complex", filter_str,
-            "-map", "[v]",
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        concat_list = self.temp_dir / "concat_scenes.txt"
+        with open(concat_list, "w") as f:
+            for c in valid_clips:
+                f.write(f"file '{c.resolve()}'\n")
+
+        # Concat demuxer with re-encoding (robust, low RAM, never hits filtergraph limit)
+        cmd_concat = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_list),
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
             str(merged_video)
         ]
-        subprocess.run(cmd_concat, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.run(cmd_concat, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, check=True)
+            logger.info("✅ Merged scenes successfully generated via concat demuxer!")
+        except subprocess.CalledProcessError as err:
+            err_msg = err.stderr[-300:] if err.stderr else str(err)
+            logger.error(f"[Producer] Concat demuxer failed: {err_msg}")
+            worker_manager.report_error("producer", f"Scene stitching failed: {err_msg}")
+            return None
+        finally:
+            if concat_list.exists():
+                concat_list.unlink()
 
         # 4. Cinematic Background Music Track
         music_track = self._get_ambient_music_track()
