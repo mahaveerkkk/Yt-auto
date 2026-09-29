@@ -31,6 +31,7 @@ from core.strategy import strategy_engine
 from core.worker_manager import worker_manager
 from core.resilience import quota_tracker, watchdog, resilient_call
 from core.ceo_comms import ceo_comms
+from core.shorts_clipper import shorts_clipper
 
 BOT_TOKEN = settings.TELEGRAM_BOT_TOKEN
 AUTHORIZED_CHAT_ID = str(settings.TELEGRAM_CHAT_ID)
@@ -264,6 +265,27 @@ def cmd_produce(topic: str = None):
                     category=topic_info.get("category", "Mystery"),
                     thumb_path=thumb_path
                 )
+
+                # Step 7: Auto-clip viral YouTube Short & upload
+                try:
+                    send_tg("✂️ *Clipper:* Creating 48s viral vertical Short (9:16) with ambient framing...")
+                    short_file = shorts_clipper.generate_short(
+                        long_video_path=final_video,
+                        title=manifest.get("title", ""),
+                        category=topic_info.get("category", "Mystery"),
+                        duration_sec=48
+                    )
+                    if short_file and short_file.exists():
+                        short_url = shorts_clipper.publish_short(
+                            short_video_path=short_file,
+                            title=manifest.get("title", ""),
+                            long_video_url=yt_url,
+                            category=topic_info.get("category", "Mystery")
+                        )
+                        if short_url:
+                            send_tg(f"🔥 *Viral YouTube Short Published Live!*\n👉 {short_url}\n_(Driving top-of-funnel traffic to master documentary)_")
+                except Exception as s_err:
+                    logger.warning(f"[CEO Bot] Shorts generation optional error: {s_err}")
             else:
                 worker_manager.report_error("uploader", "YouTube upload returned empty response")
                 send_tg("⚠️ Video delivered to Telegram, but YouTube upload encountered an API issue.")
@@ -335,6 +357,31 @@ def handle_natural_chat(text: str):
         )
 
 
+def cmd_short():
+    """Generates an instant standalone viral Short."""
+    global production_active
+    if production_active:
+        send_tg("⚠️ *Studio Busy:* Abhi already ek video produce ho rahi hai. Please wait...")
+        return
+
+    send_tg("⚡ *Viral Short Production Initiated!* Generating cinematic vertical hook & sound design...")
+
+    def _short_task():
+        global production_active
+        production_active = True
+        try:
+            from make_viral_short import main as run_viral_short
+            run_viral_short()
+            send_tg("✅ *Standalone Viral Short Complete!* Delivered to your Telegram!")
+        except Exception as e:
+            logger.error(f"[Shorts Error]: {e}", exc_info=True)
+            send_tg(f"❌ *Shorts Production Failed:* {str(e)[:150]}")
+        finally:
+            production_active = False
+
+    threading.Thread(target=_short_task, daemon=True).start()
+
+
 def process_message(text: str):
     """Routes incoming Telegram commands and natural chat."""
     text = text.strip()
@@ -349,8 +396,9 @@ def process_message(text: str):
             "🧠 `/strategy` — Niche performance & algorithm analysis\n"
             "📈 `/quota` — Daily API quotas & limits\n"
             "🔥 `/trending` — Top candidate viral topics\n"
-            "🎬 `/produce` — Autonomous long-form documentary\n"
+            "🎬 `/produce` — Autonomous long-form documentary (8-12 min)\n"
             "🎯 `/produce [topic]` — Custom commissioned documentary\n"
+            "⚡ `/short` — Generate instant 9:16 viral Short\n"
             "📈 `/analyze` — Latest video post-mortem\n"
             "🛑 `/stop` — Cancel active production\n\n"
             "Ya seedha koi bhi baat karo mujhse! 💬"
@@ -369,6 +417,8 @@ def process_message(text: str):
         cmd_analyze()
     elif lower.startswith("/stop") or lower.startswith("/cancel"):
         cmd_stop()
+    elif lower.startswith("/short") or lower.startswith("/clip"):
+        cmd_short()
     elif lower.startswith("/produce"):
         custom = text[len("/produce"):].strip()
         cmd_produce(topic=custom if custom else None)

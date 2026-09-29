@@ -125,9 +125,43 @@ class Scout:
         logger.info(f"[Scout] Scraped {len(live_topics)} live trending topics from Google News.")
         return live_topics
 
+    YOUTUBE_INSPIRATION_CHANNELS = [
+        {"name": "Astrum", "id": "UC9RM-iSvTu1uPJb8X5yp3EQ", "category": "Dark Space & Astronomy"},
+        {"name": "RealLifeLore", "id": "UCLtREJY21xRfCuEKvdki1Kw", "category": "Classified Aviation & Maritime"},
+        {"name": "Kurzgesagt", "id": "UCsXVk37bltHxD1rDPwtNM8Q", "category": "Quantum & Universe Physics"},
+        {"name": "SciShow Space", "id": "UC0cd_-e49hZpWLH3UIwoWRA", "category": "Dark Space & Astronomy"}
+    ]
+
+    def fetch_youtube_channel_trends(self) -> List[Dict[str, Any]]:
+        """Scrapes recent video titles from high-performing science/mystery channels via public RSS."""
+        channel_topics = []
+        for ch in self.YOUTUBE_INSPIRATION_CHANNELS:
+            url = f"https://www.youtube.com/feeds/videos.xml?channel_id={ch['id']}"
+            try:
+                res = requests.get(url, timeout=5)
+                if res.status_code == 200:
+                    root = ET.fromstring(res.content)
+                    ns = {"atom": "http://www.w3.org/2005/Atom"}
+                    entries = root.findall("atom:entry", ns)
+                    for e in entries[:2]:
+                        t_el = e.find("atom:title", ns)
+                        if t_el is not None and t_el.text:
+                            raw_t = t_el.text.strip()
+                            channel_topics.append({
+                                "category": ch["category"],
+                                "topic": raw_t[:80],
+                                "angle": f"Investigating the phenomenon behind: {raw_t}",
+                                "keywords": raw_t.split()[:4]
+                            })
+            except Exception as e:
+                logger.debug(f"[Scout] YouTube RSS channel {ch['name']} error: {e}")
+
+        logger.info(f"[Scout] Scraped {len(channel_topics)} recent inspiration topics from YouTube RSS.")
+        return channel_topics
+
     def pick_next_viral_topic(self, user_override: Optional[str] = None) -> Dict[str, Any]:
         """Chooses the next high-retention viral topic with zero repetition."""
-        worker_manager.start_task("scout", "Evaluating web trends and high-RPM candidate pool")
+        worker_manager.start_task("scout", "Evaluating web trends, YouTube RSS, and high-RPM candidate pool")
 
         if user_override:
             logger.info(f"[Scout] Using commissioned topic: '{user_override}'")
@@ -141,17 +175,27 @@ class Scout:
 
         history = self._load_history()
 
-        # 1. 40% chance: Pick fresh live discovery from Google Trends RSS
+        # 1. 35% chance: Pick fresh live discovery from Google Trends RSS
         live_news = self.fetch_live_trending_news()
         fresh_live = [t for t in live_news if t["topic"] not in history]
-        if fresh_live and random.random() < 0.4:
+        if fresh_live and random.random() < 0.35:
             chosen = random.choice(fresh_live)
             self._save_history(chosen["topic"])
             logger.info(f"[Scout] Selected LIVE web trend: '{chosen['topic']}'")
             worker_manager.complete_task("scout", f"Selected Live: {chosen['topic']}")
             return chosen
 
-        # 2. 60% chance: Select from High-RPM Curated Documentary Pool
+        # 2. 25% chance: Pick viral topic from high-performing YouTube RSS channels
+        yt_trends = self.fetch_youtube_channel_trends()
+        fresh_yt = [t for t in yt_trends if t["topic"] not in history]
+        if fresh_yt and random.random() < 0.25:
+            chosen = random.choice(fresh_yt)
+            self._save_history(chosen["topic"])
+            logger.info(f"[Scout] Selected YouTube RSS inspiration: '{chosen['topic']}'")
+            worker_manager.complete_task("scout", f"Selected YT RSS: {chosen['topic']}")
+            return chosen
+
+        # 3. 40% chance (or fallback): Select from High-RPM Curated Documentary Pool
         candidates = [t for t in self.CURATED_HIGH_RPM_POOLS if t["topic"] not in history]
         if not candidates:
             candidates = self.CURATED_HIGH_RPM_POOLS
