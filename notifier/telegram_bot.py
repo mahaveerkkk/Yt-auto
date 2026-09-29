@@ -10,8 +10,15 @@ class TelegramNotifier:
         self.bot_token = settings.TELEGRAM_BOT_TOKEN
         self.chat_id = settings.TELEGRAM_CHAT_ID
 
+    @staticmethod
+    def _escape_markdown(text: str) -> str:
+        """Escape special Markdown characters in dynamic content to prevent Telegram 400 errors."""
+        for ch in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+            text = text.replace(ch, f'\\{ch}')
+        return text
+
     def send_alert(self, text: str) -> bool:
-        """Sends a text message to Telegram."""
+        """Sends a text message to Telegram with Markdown fallback to plain text."""
         if not self.bot_token or not self.chat_id:
             return False
 
@@ -23,7 +30,13 @@ class TelegramNotifier:
                 "parse_mode": "Markdown"
             }
             res = requests.post(url, json=payload, timeout=15)
-            return res.status_code == 200
+            if res.status_code == 200:
+                return True
+            # Markdown parsing failed — retry as plain text
+            logger.debug(f"[Telegram] Markdown rejected ({res.status_code}), retrying as plain text")
+            payload["parse_mode"] = ""
+            res2 = requests.post(url, json=payload, timeout=15)
+            return res2.status_code == 200
         except Exception as e:
             logger.warning(f"[Telegram Alert] Failed to send: {e}")
             return False

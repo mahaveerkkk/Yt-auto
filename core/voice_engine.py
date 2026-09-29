@@ -67,7 +67,22 @@ class VoiceEngine:
         srt_path = self.temp_dir / "subtitles.srt"
         voice = self.get_voice(language, gender)
 
-        success = asyncio.run(self._generate_async(script_text, voice, audio_path, srt_path))
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    success = executor.submit(asyncio.run, self._generate_async(script_text, voice, audio_path, srt_path)).result()
+            else:
+                success = asyncio.run(self._generate_async(script_text, voice, audio_path, srt_path))
+        except Exception as e:
+            logger.error(f"[VoiceEngine] Synthesis failed: {e}")
+            success = False
+
         if success and audio_path.exists():
             return audio_path, srt_path
         return None, None

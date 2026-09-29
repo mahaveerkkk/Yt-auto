@@ -61,8 +61,9 @@ class Producer:
             cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(file_path)]
             res = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return float(json.loads(res.stdout)["format"]["duration"])
-        except Exception:
-            return 60.0
+        except Exception as e:
+            logger.warning(f"[Producer] ffprobe failed for {file_path}, using fallback duration: {e}")
+            return 600.0  # 10-minute fallback for long-form documentaries
 
     def _get_ambient_music_track(self) -> Path:
         """Selects a dark ambient cinematic track from the pre-rendered music pool."""
@@ -256,7 +257,7 @@ class Producer:
             logger.warning(f"[Producer] Outro slate generation error: {e}")
             return False
 
-    def produce_full_documentary(self, manifest: Dict[str, Any]) -> Optional[Path]:
+    def produce_full_documentary(self, manifest: Dict[str, Any], cancel_check: Optional[Any] = None) -> Optional[Path]:
         """Executes full long-form documentary production with high visual diversity & natural voice."""
         scenes = manifest.get("scenes", [])
         script = manifest.get("voice_script", "")
@@ -274,7 +275,18 @@ class Producer:
             async def _synth():
                 comm = edge_tts.Communicate(script, chosen_voice, rate="-2%")
                 await comm.save(str(voice_path))
-            asyncio.run(_synth())
+
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    executor.submit(asyncio.run, _synth()).result()
+            else:
+                asyncio.run(_synth())
         except Exception as e:
             logger.error(f"[Producer] Voice synthesis failed: {e}")
             worker_manager.report_error("producer", f"Voice synthesis error: {e}")
@@ -292,6 +304,10 @@ class Producer:
         used_video_ids = set()
 
         for i, sc in enumerate(scenes, start=1):
+            if cancel_check and cancel_check():
+                logger.info("[Producer] Cancellation detected during scene rendering. Aborting.")
+                worker_manager.report_error("producer", "Production cancelled by user")
+                return None
             clip_target = self.temp_dir / f"clip_{i}.mp4"
             img_target = self.temp_dir / f"scene_{i}.jpg"
             query = sc.get("keywords") or sc.get("prompt") or title
@@ -369,14 +385,14 @@ class Producer:
                 "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];"
                 "[3:a]adelay=1500|1500,volume=0.22[sfx_b];"
                 "[4:a]adelay=60000|60000,volume=0.20[sfx_w];"
-                "[v][m][sfx_b][sfx_w]amix=inputs=4:duration=first[a_out]"
+                "[v][m][sfx_b][sfx_w]amix=inputs=4:duration=first:normalize=0[a_out]"
             )
         else:
             filter_complex = (
                 "[0:v]eq=contrast=1.05:saturation=1.1,"
                 "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
                 "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
-                "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first[a_out]"
+                "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first:normalize=0[a_out]"
             )
 
         cmd = ["ffmpeg", "-y"] + base_inputs + [
@@ -384,7 +400,7 @@ class Producer:
             "-map", "[v_out]",
             "-map", "[a_out]",
             "-t", str(voice_duration),
-            "-c:v", "libx264", "-preset", "ultrafast",
+            "-c:v", "libx264", "-preset", "fast",
             "-c:a", "aac",
             str(final_video)
         ]

@@ -56,7 +56,8 @@ class Settings:
     SCENE_DURATION_SEC: int = 5
 
     # --- Paths ---
-    TEMP_DIR: Path = Path("/tmp/autodirector")
+    import tempfile
+    TEMP_DIR: Path = Path(tempfile.gettempdir()) / "autodirector"
     PARTS_DIR: Path = TEMP_DIR / "parts"
     OUTPUT_DIR: Path = TEMP_DIR / "output"
     ASSETS_DIR: Path = BASE_DIR / "assets"

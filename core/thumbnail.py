@@ -72,8 +72,11 @@ class ThumbnailDesigner:
                 f"drawtext=text='{clean_hook}':fontcolor=yellow:fontsize=68:x=(w-text_w)/2:y=h-130:"
                 f"bordercolor=black:borderw=6:shadowcolor=black@0.9:shadowx=4:shadowy=4"
             )
-            subprocess.run(["ffmpeg", "-y", "-i", str(raw_a), "-vf", vf_a, str(final_a)],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                subprocess.run(["ffmpeg", "-y", "-i", str(raw_a), "-vf", vf_a, str(final_a)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"[Thumbnail] FFmpeg Option A failed: {e.stderr[:300] if e.stderr else e}")
 
         # Render Final B (Red Classified Badge + Bold White Text)
         if raw_b.exists():
@@ -83,12 +86,15 @@ class ThumbnailDesigner:
                 f"drawtext=text='{clean_hook}':fontcolor=white:fontsize=64:x=(w-text_w)/2:y=h-130:"
                 f"bordercolor=black:borderw=6:shadowcolor=red@0.5:shadowx=3:shadowy=3"
             )
-            subprocess.run(["ffmpeg", "-y", "-i", str(raw_b), "-vf", vf_b, str(final_b)],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                subprocess.run(["ffmpeg", "-y", "-i", str(raw_b), "-vf", vf_b, str(final_b)],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
+            except subprocess.CalledProcessError as e:
+                logger.error(f"[Thumbnail] FFmpeg Option B failed: {e.stderr[:300] if e.stderr else e}")
 
         return {
             "thumb_a": final_a if final_a.exists() else None,
-            "thumb_b": final_b if final_b.exists() else (final_a if final_a.exists() else None)
+            "thumb_b": final_b if final_b.exists() else None  # Don't fake B with A — let A/B optimizer know B failed
         }
 
     def generate_thumbnail(self, title: str, hook_text: str, visual_prompt: str) -> Optional[Path]:

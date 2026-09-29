@@ -45,6 +45,8 @@ API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 production_active = False
 production_cancel_requested = False
 selected_thumb_choice = None
+thumb_pick_event = threading.Event()
+waiting_for_thumb_pick = False
 
 
 def send_tg(text: str, parse_mode: str = "Markdown"):
@@ -220,7 +222,7 @@ def cmd_produce(topic: str = None):
             if production_cancel_requested:
                 return
             send_tg("🎨 *Production Team:* Assembling HD footage, synthesizing Brian voiceover, and mastering ambient score...")
-            final_video = producer.produce_full_documentary(manifest)
+            final_video = producer.produce_full_documentary(manifest, cancel_check=lambda: production_cancel_requested)
 
             if production_cancel_requested:
                 return
@@ -232,7 +234,8 @@ def cmd_produce(topic: str = None):
             # Step 4: Dual Thumbnail Creation (Option A vs Option B)
             worker_manager.start_task("thumbnail", "Generating dual thumbnail concepts (Option A & B)")
             hook = title[:20]
-            thumb_prompt = manifest["scenes"][0]["prompt"] if manifest.get("scenes") else title
+            first_scene = manifest.get("scenes", [{}])[0] if manifest.get("scenes") else {}
+            thumb_prompt = first_scene.get("prompt", title) if isinstance(first_scene, dict) else title
             thumbs = thumbnail_designer.generate_dual_thumbnails(title, hook, thumb_prompt, category=topic_info.get("category", "Mystery"))
             thumb_a = thumbs.get("thumb_a")
             thumb_b = thumbs.get("thumb_b")
@@ -254,15 +257,15 @@ def cmd_produce(topic: str = None):
                 "_Agar aap busy hain ya reply nahi dete, toh AI automatically Option A select karke upload kar dega (Video rukegi nahi)!_"
             )
 
-            # 10-Minute Non-blocking countdown window (checks every 2 seconds, max 600s)
-            global selected_thumb_choice
+            # 10-Minute Event-driven non-blocking countdown window
+            global selected_thumb_choice, waiting_for_thumb_pick
             selected_thumb_choice = None
-            wait_elapsed = 0
-            while wait_elapsed < 600 and not production_cancel_requested:
-                if selected_thumb_choice in ("A", "B"):
-                    break
-                time.sleep(2)
-                wait_elapsed += 2
+            waiting_for_thumb_pick = True
+            thumb_pick_event.clear()
+
+            # Wait up to 600s or until /pick A or /pick B is received
+            thumb_pick_event.wait(timeout=600)
+            waiting_for_thumb_pick = False
 
             if selected_thumb_choice == "B" and thumb_b and thumb_b.exists():
                 active_thumb = thumb_b
@@ -291,14 +294,17 @@ def cmd_produce(topic: str = None):
 
             if yt_url:
                 worker_manager.complete_task("uploader", "Published to YouTube")
-                video_id = yt_url.split("/")[-1].split("?")[0]
+                import urllib.parse
+                parsed_url = urllib.parse.urlparse(yt_url)
+                qs = urllib.parse.parse_qs(parsed_url.query)
+                video_id = qs.get('v', [parsed_url.path.split('/')[-1]])[0]
                 from core.studio_memory import studio_memory
                 studio_memory.record_upload(
                     video_id=video_id,
                     title=manifest.get("title", ""),
                     category=topic_info.get("category", "Mystery"),
                     youtube_url=yt_url,
-                    thumb_path=str(thumb_path) if thumb_path else ""
+                    thumb_path=str(active_thumb) if active_thumb else ""
                 )
 
                 # Post engagement starter in YouTube comments
@@ -324,7 +330,7 @@ def cmd_produce(topic: str = None):
                     yt_url=yt_url,
                     duration_sec=duration_sec,
                     category=topic_info.get("category", "Mystery"),
-                    thumb_path=thumb_path
+                    thumb_path=active_thumb
                 )
 
                 # Step 7: Auto-clip viral YouTube Short & upload
@@ -522,12 +528,17 @@ def process_message(text: str):
         )
     elif lower.startswith("/pick"):
         global selected_thumb_choice
+        if not waiting_for_thumb_pick:
+            send_tg("ℹ️ Boss, abhi koi thumbnail selection window open nahi hai. Video render complete hone par alerts aayenge!")
+            return
         choice = lower.replace("/pick", "").strip().upper()
         if "B" in choice:
             selected_thumb_choice = "B"
+            thumb_pick_event.set()
             send_tg("🎯 *Cover Selection Registered:* Option B will be used for YouTube upload!")
         elif "A" in choice:
             selected_thumb_choice = "A"
+            thumb_pick_event.set()
             send_tg("🎯 *Cover Selection Registered:* Option A will be used for YouTube upload!")
         else:
             send_tg("ℹ️ Usage: `/pick A` ya `/pick B`")

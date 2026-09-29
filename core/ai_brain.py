@@ -63,10 +63,10 @@ class AIBrain:
             worker_manager.complete_task("ai_brain", "Pexels quota exhausted")
             return {"allowed": False, "reason": "Pexels API limit reached"}
 
-        # 2. Check daily uploads from DB
+        # 2. Check daily uploads from actual video records (not just planned calendar)
         today = date.today().isoformat()
-        calendar_items = studio_memory.get_calendar(today)
-        completed_today = sum(1 for c in calendar_items if c.get("status") == "completed")
+        recent_videos = studio_memory.get_recent_videos(limit=10)
+        completed_today = sum(1 for v in recent_videos if v.get("uploaded_at", "").startswith(today))
 
         if completed_today >= 2:
             worker_manager.complete_task("ai_brain", "Daily upload limit (2/2) reached")

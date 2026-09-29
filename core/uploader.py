@@ -142,10 +142,23 @@ class Uploader:
             request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
             response = None
+            retry_count = 0
+            max_retries = 5
             while response is None:
-                status, response = request.next_chunk()
-                if status:
-                    logger.info(f"[YouTube] Uploading: {int(status.progress() * 100)}%")
+                try:
+                    status, response = request.next_chunk()
+                    if status:
+                        logger.info(f"[YouTube] Uploading: {int(status.progress() * 100)}%")
+                    retry_count = 0  # Reset on success
+                except Exception as chunk_err:
+                    retry_count += 1
+                    if retry_count > max_retries:
+                        logger.error(f"[YouTube] Upload failed after {max_retries} retries: {chunk_err}")
+                        raise
+                    wait_time = min(2 ** retry_count * 5, 120)  # 10s, 20s, 40s, 80s, 120s
+                    logger.warning(f"[YouTube] Chunk upload error (retry {retry_count}/{max_retries}, waiting {wait_time}s): {chunk_err}")
+                    import time
+                    time.sleep(wait_time)
 
             video_id = response.get("id")
             video_url = f"https://youtu.be/{video_id}"

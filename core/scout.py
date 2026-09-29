@@ -189,7 +189,10 @@ class Scout:
             if res:
                 clean = res.strip()
                 if "{" in clean and "}" in clean:
-                    clean = clean[clean.find("{"):clean.rfind("}")+1]
+                    start_idx = clean.find("{")
+                    end_idx = clean.rfind("}")
+                    if start_idx >= 0 and end_idx > start_idx:
+                        clean = clean[start_idx:end_idx+1]
                     data = json.loads(clean)
                     if data.get("topic") and len(data.get("topic")) > 5:
                         logger.info(f"[Scout] ✨ Polished '{raw_topic}' -> '{data.get('topic')}'")

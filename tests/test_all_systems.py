@@ -28,6 +28,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+# --- SAFETY: Redirect studio_memory to a temp DB so tests never corrupt production data ---
+import tempfile
+_test_db_dir = tempfile.mkdtemp(prefix="void_archive_test_")
+os.environ["STUDIO_MEMORY_TEST_DB"] = os.path.join(_test_db_dir, "test_studio_memory.db")
+
 passed_tests = 0
 failed_tests = 0
 

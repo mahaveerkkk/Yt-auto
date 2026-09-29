@@ -20,7 +20,9 @@ class StudioMemory:
     """
 
     def __init__(self):
-        self.db_path = settings.LOGS_DIR / "studio_memory.db"
+        import os
+        test_db = os.environ.get("STUDIO_MEMORY_TEST_DB")
+        self.db_path = Path(test_db) if test_db else settings.LOGS_DIR / "studio_memory.db"
         self._init_db()
 
     def _init_db(self):
@@ -211,6 +213,20 @@ class StudioMemory:
         except Exception as e:
             logger.error(f"[StudioMemory] Stats update error: {e}")
 
+    def record_ab_swap(self, video_id: str, new_title: str):
+        """Records an A/B test title overhaul and increments ab_swap_count."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE videos 
+                    SET title = ?, ab_swap_count = ab_swap_count + 1 
+                    WHERE video_id = ?
+                """, (new_title, video_id))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[StudioMemory] Record A/B swap error: {e}")
+
     # ---------------- Strategy Decisions ----------------
     def log_strategy_decision(self, decision_type: str, old_value: str, new_value: str, reason: str, data_snapshot: Optional[Dict] = None):
         try:
@@ -324,6 +340,7 @@ class StudioMemory:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM content_calendar WHERE planned_date = ? ORDER BY planned_time ASC", (d,))
+                return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"[StudioMemory] Calendar fetch failed: {e}")
             return []
@@ -384,6 +401,18 @@ class StudioMemory:
                 conn.commit()
         except Exception as e:
             logger.error(f"[StudioMemory] Save comment failed: {e}")
+
+    def mark_comment_replied(self, comment_id: str):
+        """Mark a viewer comment as replied in the database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.cursor().execute(
+                    "UPDATE viewer_comments SET replied = 1 WHERE comment_id = ?",
+                    (comment_id,)
+                )
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[StudioMemory] Mark comment replied failed: {e}")
 
     def get_suggested_topics(self, limit: int = 10) -> List[Dict[str, Any]]:
         try:

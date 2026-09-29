@@ -140,7 +140,7 @@ class VideoEngine:
                 continue
             try:
                 logger.info(f"[Pexels Stock] Searching footage for query: '{q}'")
-                url = f"https://api.pexels.com/videos/search?query={q}&orientation=portrait&per_page=5"
+                url = f"https://api.pexels.com/videos/search?query={q}&orientation=landscape&per_page=5"
                 resp = requests.get(url, headers=headers, timeout=15)
 
                 if resp.status_code == 200:
@@ -149,9 +149,9 @@ class VideoEngine:
                     if videos:
                         video_files = videos[0].get("video_files", [])
                         download_url = None
-                        # Prefer vertical HD
+                        # Prefer landscape HD (16:9 for documentaries)
                         for vf in video_files:
-                            if vf.get("width") and vf.get("height") and vf.get("height") > vf.get("width"):
+                            if vf.get("width") and vf.get("height") and vf.get("width") > vf.get("height"):
                                 download_url = vf.get("link")
                                 break
                         if not download_url and video_files:
@@ -162,6 +162,7 @@ class VideoEngine:
                             return True
             except Exception as e:
                 logger.warning(f"[Pexels Stock] Error fetching stock for '{q}': {e}")
+        return False
 
     # -------------------------------------------------------------
     # Helper: Download video from URL

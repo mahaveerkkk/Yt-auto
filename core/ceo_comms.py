@@ -6,7 +6,7 @@ from utils.logger import logger
 from core.analytics_ceo import analytics_ceo
 from core.strategy import strategy_engine
 from core.worker_manager import worker_manager
-from core.resilience import quota_tracker, watchdog
+from core.resilience import quota_tracker, watchdog, resilient_call
 
 
 class CEOComms:
@@ -22,26 +22,33 @@ class CEOComms:
         self.api_base = f"https://api.telegram.org/bot{self.bot_token}"
 
     def send_message(self, text: str, parse_mode: str = "Markdown") -> bool:
-        """Sends rich formatted message to Veer on Telegram."""
+        """Sends rich formatted message to Veer on Telegram with retry and plain text fallback."""
         if not self.bot_token or not self.chat_id:
             logger.warning("[CEOComms] Telegram credentials missing.")
             return False
-        try:
+
+        def _do_send():
             res = requests.post(f"{self.api_base}/sendMessage", json={
                 "chat_id": self.chat_id,
                 "text": text,
                 "parse_mode": parse_mode
             }, timeout=25)
+            if res.status_code != 200 and parse_mode:
+                # Fallback to plain text if markdown was rejected by Telegram API
+                res = requests.post(f"{self.api_base}/sendMessage", json={
+                    "chat_id": self.chat_id,
+                    "text": text
+                }, timeout=25)
             return res.status_code == 200
-        except Exception as e:
-            logger.error(f"[CEOComms] Message transmission failed: {e}")
-            return False
+
+        return bool(resilient_call(_do_send, max_retries=3, backoff_base=2.0, fallback_value=False))
 
     def send_photo(self, photo_path: Path, caption: str) -> bool:
-        """Sends visual photo/thumbnail preview to Veer on Telegram."""
-        if not self.bot_token or not self.chat_id:
+        """Sends visual photo/thumbnail preview to Veer on Telegram with resilient retry."""
+        if not self.bot_token or not self.chat_id or not photo_path.exists():
             return False
-        try:
+
+        def _do_send_photo():
             with open(photo_path, "rb") as f:
                 res = requests.post(f"{self.api_base}/sendPhoto", data={
                     "chat_id": self.chat_id,
@@ -49,9 +56,8 @@ class CEOComms:
                     "parse_mode": "Markdown"
                 }, files={"photo": f}, timeout=25)
                 return res.status_code == 200
-        except Exception as e:
-            logger.error(f"[CEOComms] Photo transmission failed: {e}")
-            return False
+
+        return bool(resilient_call(_do_send_photo, max_retries=2, backoff_base=2.0, fallback_value=False))
 
     @staticmethod
     def _render_progress_bar(current: float, target: float, length: int = 10) -> str:

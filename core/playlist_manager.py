@@ -122,6 +122,17 @@ class PlaylistManager:
             service = uploader.get_youtube_service()
             if service:
                 try:
+                    # Check if already present to avoid duplicates
+                    check = service.playlistItems().list(
+                        part="id",
+                        playlistId=playlist_id,
+                        videoId=video_id,
+                        maxResults=1
+                    ).execute()
+                    if check.get("items"):
+                        logger.info(f"[PlaylistManager] Video already in playlist '{pillar['name']}', skipping duplicate insert.")
+                        return playlist_id
+
                     body = {
                         "snippet": {
                             "playlistId": playlist_id,

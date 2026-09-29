@@ -32,9 +32,9 @@ class StudioScheduler:
         self.last_cleanup_date = None
         self.last_sunday_report_date = None
         self.last_production_hour = None
-        self.last_ab_check_time = 0
-        self.last_comment_check_time = 0
-        self.last_heartbeat_time = 0
+        self.last_ab_check_time = time.time()
+        self.last_comment_check_time = time.time()
+        self.last_heartbeat_time = time.time()
 
     def start(self):
         self.running = True

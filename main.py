@@ -38,7 +38,7 @@ def run_pipeline(topic: str = None, mode: str = "fast", dry_run: bool = False, k
         logger.info(f"Step 2: Generating Scene Video Clips (Mode: {mode})...")
         raw_clips = video_engine.generate_all_scenes(scenes, mode=mode)
         if not raw_clips or len(raw_clips) < 2:
-            raise RuntimeError(f"Insufficient video clips generated ({len(raw_clips)} clips). Aborting.")
+            raise RuntimeError(f"Insufficient video clips generated ({len(raw_clips) if raw_clips else 0} clips). Aborting.")
 
         # 3. Voice Engine: Conditional Voiceover & Subtitles
         voice_path = None
@@ -54,9 +54,10 @@ def run_pipeline(topic: str = None, mode: str = "fast", dry_run: bool = False, k
         logger.info("Step 4: Assembling Normalized 9:16 Video...")
         # Check if background music exists
         bg_music = None
-        for music_file in settings.MUSIC_DIR.glob("*.mp3"):
-            bg_music = music_file
-            break
+        music_tracks = list(settings.MUSIC_DIR.glob("*.mp3"))
+        if music_tracks:
+            import random
+            bg_music = random.choice(music_tracks)
 
         final_video = compositor.assemble_full_video(
             raw_clips=raw_clips,
@@ -81,8 +82,11 @@ def run_pipeline(topic: str = None, mode: str = "fast", dry_run: bool = False, k
         if not dry_run:
             logger.info("Step 6: Delivering Video...")
             uploader.send_to_telegram(final_video, caption)
-            uploader.upload_to_youtube(final_video, manifest)
-            notifier.notify_success(title, duration=len(raw_clips) * 5.0, scene_count=len(raw_clips))
+            yt_res = uploader.upload_to_youtube(final_video, manifest)
+            if yt_res:
+                notifier.notify_success(title, duration=len(raw_clips) * 5.0, scene_count=len(raw_clips))
+            else:
+                logger.warning("[Main] YouTube upload failed or was skipped.")
         else:
             logger.info(f"[Dry Run] Final video ready at: {final_video} (Upload skipped)")
 
@@ -96,8 +100,8 @@ def run_pipeline(topic: str = None, mode: str = "fast", dry_run: bool = False, k
         logger.info("==================================================")
         return True
 
-    except Exception as e:
-        logger.error(f"❌ Pipeline failed with error: {e}", exc_info=True)
+    except (Exception, KeyboardInterrupt) as e:
+        logger.error(f"❌ Pipeline failed or interrupted with error: {e}", exc_info=True)
         notifier.notify_failure("Pipeline Run", str(e))
         if not keep_temp:
             clean_temp_storage(keep_final=False)

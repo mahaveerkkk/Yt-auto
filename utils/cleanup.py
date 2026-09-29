@@ -41,7 +41,8 @@ def cleanup_intermediate_production(keep_path: Path = None):
     preserving ONLY the master final video file.
     Guarantees that each video leaves zero garbage on disk.
     """
-    prod_dir = Path("/tmp/autodirector_production")
+    import tempfile
+    prod_dir = Path(tempfile.gettempdir()) / "autodirector_production"
     if not prod_dir.exists():
         return
 
@@ -76,10 +77,11 @@ def prune_disk_hygiene(max_age_hours: int = 48) -> dict:
     cutoff = now - (max_age_hours * 3600)
     freed_mb = 0
 
+    import tempfile
+    tmp = Path(tempfile.gettempdir())
     scan_dirs = [
-        Path("/tmp/autodirector_thumbs"),
-        Path("/tmp/autodirector_production"),
-        Path("/tmp")
+        tmp / "autodirector_thumbs",
+        tmp / "autodirector_production"
     ]
 
     for d in scan_dirs:

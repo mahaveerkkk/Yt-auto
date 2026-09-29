@@ -1,5 +1,5 @@
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from config.settings import settings
 from utils.logger import logger
@@ -28,7 +28,7 @@ class ABOptimizer:
         if not tracked:
             return None
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         for v in tracked:
             uploaded_str = v.get("uploaded_at")
             if not uploaded_str:
@@ -36,6 +36,8 @@ class ABOptimizer:
 
             try:
                 uploaded_dt = datetime.fromisoformat(uploaded_str)
+                if uploaded_dt.tzinfo is None:
+                    uploaded_dt = uploaded_dt.replace(tzinfo=timezone.utc)
             except Exception:
                 continue
 
@@ -77,7 +79,12 @@ class ABOptimizer:
 
         # 2. Update YouTube Video Title
         try:
-            curr = service.videos().list(id=video_id, part="snippet").execute()["items"][0]
+            curr_res = service.videos().list(id=video_id, part="snippet").execute()
+            curr_items = curr_res.get("items", [])
+            if not curr_items:
+                logger.warning(f"[ABOptimizer] Video {video_id} not found or deleted. Skipping swap.")
+                return None
+            curr = curr_items[0]
             snippet = curr["snippet"]
             snippet["title"] = new_title
             service.videos().update(part="snippet", body={"id": video_id, "snippet": snippet}).execute()
@@ -101,13 +108,8 @@ class ABOptimizer:
             except Exception as e:
                 logger.warning(f"[ABOptimizer] Thumbnail swap warning: {e}")
 
-        # 4. Update Studio DB swap count
-        with studio_memory.db_path.open() as _:
-            pass
-        import sqlite3
-        with sqlite3.connect(studio_memory.db_path) as conn:
-            conn.cursor().execute("UPDATE videos SET title = ?, ab_swap_count = ab_swap_count + 1 WHERE video_id = ?", (new_title, video_id))
-            conn.commit()
+        # 4. Update Studio DB swap count via studio_memory
+        studio_memory.record_ab_swap(video_id=video_id, new_title=new_title)
 
         report = (
             f"🔄 **CEO A/B Optimization Alert!**\n\n"

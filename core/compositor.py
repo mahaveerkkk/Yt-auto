@@ -1,4 +1,5 @@
 import os
+import time
 import subprocess
 from pathlib import Path
 from typing import List, Optional
@@ -37,13 +38,14 @@ class Compositor:
             logger.error(f"FFmpeg error: {e.stderr[-300:] if e.stderr else e}")
             return False
 
-    def normalize_clip(self, input_clip: Path, output_clip: Path, duration: int = 5) -> bool:
+    def normalize_clip(self, input_clip: Path, output_clip: Path, duration: int = 5, width: Optional[int] = None, height: Optional[int] = None) -> bool:
         """
-        Normalizes any clip to 9:16 vertical (720x1280), 30 FPS, H.264/AAC.
-        If clip is 16:9 horizontal, centers it nicely.
+        Normalizes any clip to standard resolution (default 1280x720 landscape, or 720x1280 portrait), 30 FPS, H.264/AAC.
+        Maintains original aspect ratio with neat pillarbox/letterbox padding.
         """
-        # Scale to 1280x720 keeping original aspect ratio without ugly cropping
-        vf = f"scale={self.target_w}:{self.target_h}:force_original_aspect_ratio=decrease,pad={self.target_w}:{self.target_h}:(ow-iw)/2:(oh-ih)/2,setsar=1"
+        w = width or self.target_w
+        h = height or self.target_h
+        vf = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1"
 
         cmd = [
             "ffmpeg", "-y",
@@ -220,7 +222,7 @@ class Compositor:
             video_with_audio = merged_video
 
         # Step 4: Burn Subtitles (if available)
-        final_output = settings.OUTPUT_DIR / f"short_{int(os.time() if hasattr(os, 'time') else 101)}.mp4"
+        final_output = settings.OUTPUT_DIR / f"short_{int(time.time())}.mp4"
         logger.info("Adding dynamic subtitles...")
         if subtitles_srt and subtitles_srt.exists():
             if not self.burn_subtitles(video_with_audio, subtitles_srt, final_output):

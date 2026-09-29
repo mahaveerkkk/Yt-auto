@@ -178,7 +178,12 @@ class HealthWatchdog:
         temp_size_mb = 0.0
         for d in [temp_dir, thumb_dir]:
             if d.exists():
-                temp_size_mb += sum(f.stat().st_size for f in d.rglob('*') if f.is_file()) / (1024 * 1024)
+                for f in d.rglob('*'):
+                    try:
+                        if f.is_file():
+                            temp_size_mb += f.stat().st_size / (1024 * 1024)
+                    except (FileNotFoundError, OSError):
+                        pass  # File deleted between rglob() and stat() — safe to skip
 
         is_cloud = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT") or (disk.total / (1024**3) > 100))
 

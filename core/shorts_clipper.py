@@ -88,7 +88,7 @@ class ShortsClipper:
             return out_short_path
         except subprocess.CalledProcessError as e:
             logger.error(f"[ShortsClipper] FFmpeg failed with code {e.returncode}: {e.stderr[-400:]}")
-            worker_manager.fail_task("producer", f"Shorts clipping failed: {e.returncode}")
+            worker_manager.report_error("producer", f"Shorts clipping failed: {e.returncode}")
             return None
         except Exception as ex:
             logger.error(f"[ShortsClipper] Unexpected error clipping short: {ex}")
@@ -122,17 +122,23 @@ class ShortsClipper:
             "description": description,
             "hashtags": tags
         }
-        yt_url = uploader.upload_to_youtube(
-            video_path=short_video_path,
-            manifest=short_manifest,
-            privacy_status="public"
-        )
+        try:
+            yt_url = uploader.upload_to_youtube(
+                video_path=short_video_path,
+                manifest=short_manifest,
+                privacy_status="public"
+            )
 
-        if yt_url:
-            video_id = yt_url.split("/")[-1].split("?")[0]
-            short_url = f"https://youtube.com/shorts/{video_id}"
-            logger.info(f"[ShortsClipper] 🚀 YouTube Short published live: {short_url}")
-            return short_url
+            if yt_url:
+                import urllib.parse
+                parsed_url = urllib.parse.urlparse(yt_url)
+                qs = urllib.parse.parse_qs(parsed_url.query)
+                video_id = qs.get('v', [parsed_url.path.split('/')[-1]])[0]
+                short_url = f"https://youtube.com/shorts/{video_id}"
+                logger.info(f"[ShortsClipper] 🚀 YouTube Short published live: {short_url}")
+                return short_url
+        except Exception as e:
+            logger.error(f"[ShortsClipper] Failed to publish YouTube Short: {e}")
         return None
 
 

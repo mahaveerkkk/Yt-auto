@@ -38,11 +38,14 @@ class AnalyticsCEO:
             ch = items[0]
             stats = ch.get("statistics", {})
             snippet = ch.get("snippet", {})
+            total_views_int = int(stats.get("viewCount", 0))
+            est_watch_hours = round((total_views_int * 5.5) / 60.0, 1)
             self._cached_summary = {
                 "channel_name": snippet.get("title", "Void Archive"),
                 "total_views": stats.get("viewCount", "0"),
                 "subscribers": stats.get("subscriberCount", "0"),
-                "video_count": stats.get("videoCount", "0")
+                "video_count": stats.get("videoCount", "0"),
+                "estimated_watch_hours": est_watch_hours
             }
             self._cache_time = time.time()
             return self._cached_summary
@@ -59,8 +62,6 @@ class AnalyticsCEO:
         service = uploader.get_youtube_service()
         if not service:
             return self._cached_recent or []
-        if not service:
-            return []
 
         try:
             # Search channel's uploads
