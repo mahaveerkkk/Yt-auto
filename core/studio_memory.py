@@ -121,6 +121,35 @@ class StudioMemory:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 7. Playlists table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS playlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    playlist_id TEXT UNIQUE,
+                    title TEXT,
+                    category TEXT,
+                    youtube_url TEXT,
+                    video_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 8. Viewer comments table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS viewer_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id TEXT UNIQUE,
+                    video_id TEXT,
+                    author TEXT,
+                    text TEXT,
+                    is_topic_suggestion INTEGER DEFAULT 0,
+                    extracted_topic TEXT,
+                    replied INTEGER DEFAULT 0,
+                    reply_text TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.commit()
 
     # ---------------- Video Records ----------------
@@ -281,9 +310,87 @@ class StudioMemory:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM content_calendar WHERE planned_date = ? ORDER BY planned_time ASC", (d,))
-                return [dict(r) for r in cursor.fetchall()]
         except Exception as e:
             logger.error(f"[StudioMemory] Calendar fetch failed: {e}")
+            return []
+
+    # ---------------- Playlists ----------------
+    def save_playlist(self, playlist_id: str, title: str, category: str, youtube_url: str = "", video_count: int = 0):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.cursor().execute("""
+                    INSERT INTO playlists (playlist_id, title, category, youtube_url, video_count)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(playlist_id) DO UPDATE SET video_count = excluded.video_count, title = excluded.title
+                """, (playlist_id, title, category, youtube_url, video_count))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[StudioMemory] Save playlist failed: {e}")
+
+    def get_playlists(self) -> List[Dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM playlists ORDER BY video_count DESC")
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[StudioMemory] Get playlists failed: {e}")
+            return []
+
+    def get_playlist_by_category(self, category: str) -> Optional[Dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM playlists WHERE category LIKE ? LIMIT 1", (f"%{category}%",))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"[StudioMemory] Get playlist by category failed: {e}")
+            return None
+
+    def increment_playlist_count(self, playlist_id: str):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.cursor().execute("UPDATE playlists SET video_count = video_count + 1 WHERE playlist_id = ?", (playlist_id,))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[StudioMemory] Increment playlist count failed: {e}")
+
+    # ---------------- Viewer Comments & Topic Mining ----------------
+    def save_viewer_comment(self, comment_id: str, video_id: str, author: str, text: str,
+                            is_topic_suggestion: int = 0, extracted_topic: str = "", reply_text: str = "", replied: int = 0):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.cursor().execute("""
+                    INSERT OR IGNORE INTO viewer_comments (comment_id, video_id, author, text, is_topic_suggestion, extracted_topic, reply_text, replied)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (comment_id, video_id, author, text, is_topic_suggestion, extracted_topic, reply_text, replied))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[StudioMemory] Save comment failed: {e}")
+
+    def get_suggested_topics(self, limit: int = 10) -> List[Dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM viewer_comments WHERE is_topic_suggestion = 1 ORDER BY created_at DESC LIMIT ?", (limit,))
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[StudioMemory] Fetch suggested topics failed: {e}")
+            return []
+
+    def get_recent_comments(self, limit: int = 15) -> List[Dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM viewer_comments ORDER BY created_at DESC LIMIT ?", (limit,))
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[StudioMemory] Fetch comments failed: {e}")
             return []
 
 

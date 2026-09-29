@@ -53,6 +53,7 @@ class Producer:
         self.pexels_key = settings.PEXELS_API_KEY
         self.hf_token = settings.HF_TOKEN
         self.music_dir = settings.MUSIC_DIR
+        self.sfx_dir = settings.SFX_DIR
 
     def _get_media_duration(self, file_path: Path) -> float:
         """Measures exact duration in seconds using ffprobe."""
@@ -312,22 +313,35 @@ class Producer:
 
         # 5. Master Documentary Audio & Video Blend
         final_video = self.temp_dir / f"{title_slug}_FINAL.mp4"
-        # Master Audio & Video Filter:
-        # Video: Color grade + Persistent subtle VOID ARCHIVE watermark + Opening Chapter Badge
-        # Audio: Voice at 1.0 + Looping Ambient Score at 0.14
-        filter_complex = (
-            "[0:v]eq=contrast=1.05:saturation=1.1,"
-            "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
-            "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
-            "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first[a_out]"
-        )
-        
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-stream_loop", "-1",
-            "-i", str(merged_video),
+        braam_sfx = self.sfx_dir / "sfx_braam.mp3"
+        whoosh_sfx = self.sfx_dir / "sfx_whoosh.mp3"
+
+        base_inputs = [
+            "-stream_loop", "-1", "-i", str(merged_video),
             "-i", str(voice_path),
-            "-i", str(music_track),
+            "-i", str(music_track)
+        ]
+
+        if braam_sfx.exists() and whoosh_sfx.exists():
+            base_inputs.extend(["-i", str(braam_sfx), "-i", str(whoosh_sfx)])
+            filter_complex = (
+                "[0:v]eq=contrast=1.05:saturation=1.1,"
+                "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
+                "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
+                "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];"
+                "[3:a]adelay=1500|1500,volume=0.22[sfx_b];"
+                "[4:a]adelay=60000|60000,volume=0.20[sfx_w];"
+                "[v][m][sfx_b][sfx_w]amix=inputs=4:duration=first[a_out]"
+            )
+        else:
+            filter_complex = (
+                "[0:v]eq=contrast=1.05:saturation=1.1,"
+                "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
+                "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
+                "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first[a_out]"
+            )
+
+        cmd = ["ffmpeg", "-y"] + base_inputs + [
             "-filter_complex", filter_complex,
             "-map", "[v_out]",
             "-map", "[a_out]",
@@ -335,7 +349,8 @@ class Producer:
             "-c:v", "libx264", "-preset", "ultrafast",
             "-c:a", "aac",
             str(final_video)
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         final_duration = self._get_media_duration(final_video)
         logger.info(f"🎉 MASTER DOCUMENTARY COMPLETE! Duration: {final_duration:.1f}s | Path: {final_video}")

@@ -61,11 +61,12 @@ class Settings:
     OUTPUT_DIR: Path = TEMP_DIR / "output"
     ASSETS_DIR: Path = BASE_DIR / "assets"
     MUSIC_DIR: Path = ASSETS_DIR / "music"
+    SFX_DIR: Path = ASSETS_DIR / "sfx"
     LOGS_DIR: Path = BASE_DIR / "logs"
 
     def ensure_directories(self):
         """Create necessary temporary and output directories in /tmp."""
-        for p in [self.TEMP_DIR, self.PARTS_DIR, self.OUTPUT_DIR, self.LOGS_DIR, self.MUSIC_DIR]:
+        for p in [self.TEMP_DIR, self.PARTS_DIR, self.OUTPUT_DIR, self.LOGS_DIR, self.MUSIC_DIR, self.SFX_DIR]:
             p.mkdir(parents=True, exist_ok=True)
 
 

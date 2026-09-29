@@ -6,6 +6,7 @@ from core.ai_brain import ai_brain
 from core.ceo_comms import ceo_comms
 from core.ab_optimizer import ab_optimizer
 from core.resilience import watchdog
+from core.comment_responder import comment_responder
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -16,6 +17,7 @@ class StudioScheduler:
     - 08:30 AM IST: Morning CEO Briefing with live monetization metrics
     - Production Slots: Evaluated dynamically via AI Brain (checks quota, channel frequency limits)
     - 3-Hour Interval: A/B Optimizer Check (Underperforming title/thumbnail swap)
+    - 4-Hour Interval: Audience Comment Scan & Topic Mining
     - 6-Hour Interval: System Watchdog & Heartbeat Telemetry
     """
 
@@ -29,6 +31,7 @@ class StudioScheduler:
         self.last_briefing_date = None
         self.last_production_hour = None
         self.last_ab_check_time = 0
+        self.last_comment_check_time = 0
         self.last_heartbeat_time = 0
 
     def start(self):
@@ -69,7 +72,18 @@ class StudioScheduler:
                     if report:
                         self.notify_callback(report)
 
-                # 4. System Watchdog & Heartbeat (Every 6 hours)
+                # 4. Audience Comments & Topic Mining Loop (Every 4 hours)
+                if time.time() - self.last_comment_check_time > 14400:
+                    self.last_comment_check_time = time.time()
+                    try:
+                        res = comment_responder.scan_and_respond()
+                        if res.get("topics_mined", 0) > 0:
+                            summary = comment_responder.format_comment_summary(limit=3)
+                            self.notify_callback(f"💬 *Audience Topic Radar:* New viewer request mined!\n\n{summary}")
+                    except Exception as ce:
+                        logger.warning(f"[Scheduler] Comment responder scan error: {ce}")
+
+                # 5. System Watchdog & Heartbeat (Every 6 hours)
                 if time.time() - self.last_heartbeat_time > 21600:
                     self.last_heartbeat_time = time.time()
                     health = watchdog.get_system_health()

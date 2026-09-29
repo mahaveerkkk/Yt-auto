@@ -32,6 +32,9 @@ from core.worker_manager import worker_manager
 from core.resilience import quota_tracker, watchdog, resilient_call
 from core.ceo_comms import ceo_comms
 from core.shorts_clipper import shorts_clipper
+from core.playlist_manager import playlist_manager
+from core.comment_responder import comment_responder
+from core.community_manager import community_manager
 
 BOT_TOKEN = settings.TELEGRAM_BOT_TOKEN
 AUTHORIZED_CHAT_ID = str(settings.TELEGRAM_CHAT_ID)
@@ -256,6 +259,18 @@ def cmd_produce(topic: str = None):
                 comment_text = manifest.get("pinned_comment") or f"What are your theories on {manifest.get('title')}? Share your thoughts below."
                 uploader.post_pinned_comment(video_id, comment_text)
 
+                # Step 6b: Auto-slot into Pillar Playlist for 4,000 Watch Hours
+                try:
+                    pl_id = playlist_manager.slot_video_into_playlist(
+                        video_id=video_id,
+                        title=manifest.get("title", ""),
+                        category=topic_info.get("category", "")
+                    )
+                    if pl_id:
+                        send_tg(f"🗂️ *Playlist Updated:* Video slotted into binge-watch archive `{pl_id}`")
+                except Exception as pl_err:
+                    logger.warning(f"[CEO Bot] Playlist slotting skipped: {pl_err}")
+
                 # Send rich upload success alert
                 duration_sec = producer._get_media_duration(final_video)
                 ceo_comms.send_upload_success_alert(
@@ -409,6 +424,9 @@ def process_message(text: str):
             "📊 `/status` — Channel stats & monetization tracking\n"
             "👥 `/workers` — Live telemetry of all studio agents\n"
             "🧠 `/strategy` — Niche performance & algorithm analysis\n"
+            "🗂️ `/playlists` — Binge-watch playlists & video counts\n"
+            "💬 `/comments` — Audience feedback & mined topic ideas\n"
+            "📊 `/poll` — Generate viral YouTube Community poll\n"
             "📈 `/quota` — Daily API quotas & limits\n"
             "🔥 `/trending` — Top candidate viral topics\n"
             "🎬 `/produce` — Autonomous long-form documentary (8-12 min)\n"
@@ -424,6 +442,12 @@ def process_message(text: str):
         cmd_workers()
     elif lower.startswith("/strategy") or lower.startswith("/strat"):
         cmd_strategy()
+    elif lower.startswith("/playlist"):
+        send_tg(playlist_manager.format_playlists_telegram_summary())
+    elif lower.startswith("/comment"):
+        send_tg(comment_responder.format_comments_telegram_summary())
+    elif lower.startswith("/poll"):
+        send_tg(community_manager.format_poll_for_telegram())
     elif lower.startswith("/quota") or lower.startswith("/quot"):
         cmd_quota()
     elif lower.startswith("/trending") or lower.startswith("/trend"):
