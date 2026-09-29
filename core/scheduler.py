@@ -1,11 +1,13 @@
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from utils.logger import logger
 from core.ai_brain import ai_brain
 from core.ceo_comms import ceo_comms
 from core.ab_optimizer import ab_optimizer
 from core.resilience import watchdog
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class StudioScheduler:
@@ -17,7 +19,7 @@ class StudioScheduler:
     - 6-Hour Interval: System Watchdog & Heartbeat Telemetry
     """
 
-    SCHEDULE_HOURS_IST = [12, 19]  # 12:00 PM & 7:00 PM (optimal for long-form retention)
+    SCHEDULE_HOURS_IST = [12, 19]  # 12:00 PM & 7:00 PM IST (optimal for long-form retention)
     MORNING_BRIEFING_HOUR = 8       # 8:30 AM IST
 
     def __init__(self, produce_callback, notify_callback):
@@ -38,7 +40,7 @@ class StudioScheduler:
     def _schedule_loop(self):
         while self.running:
             try:
-                now = datetime.now()
+                now = datetime.now(IST)
                 today_str = now.strftime("%Y-%m-%d")
                 curr_hour = now.hour
                 curr_minute = now.minute
