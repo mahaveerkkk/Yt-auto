@@ -37,30 +37,33 @@ class OmniRouter:
         if not self.gemini_key:
             return None
 
-        models_to_try = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]
+        models_to_try = ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash"]
         
         try:
             from google import genai
+            from google.genai import types
             client = genai.Client(api_key=self.gemini_key)
 
             history_context = ""
             if history:
                 history_lines = []
                 for h in history[-8:]:
-                    role = "Veer (Boss)" if h.get("role") == "user" else "CEO"
+                    role = "Veer (Boss)" if h.get("role") == "user" else "AI CEO"
                     history_lines.append(f"{role}: {h.get('content', '')}")
-                history_context = "\nRecent Conversation History:\n" + "\n".join(history_lines) + "\n\n"
+                history_context = "Recent Conversation History:\n" + "\n".join(history_lines) + "\n\n"
 
-            full_prompt = f"{system_prompt}\n{history_context}Current Message from Veer:\n{prompt}" if (system_prompt or history_context) else prompt
+            user_content = f"{history_context}Veer: {prompt}" if history_context else prompt
+            config = types.GenerateContentConfig(system_instruction=system_prompt) if system_prompt else None
 
             for model_name in models_to_try:
                 try:
                     logger.info(f"[OmniRouter] Trying Gemini Cloud: {model_name}...")
-                    res = client.models.generate_content(
-                        model=model_name,
-                        contents=full_prompt,
-                    )
-                    if res and res.text and len(res.text.strip()) > 10:
+                    kwargs = {"model": model_name, "contents": user_content}
+                    if config:
+                        kwargs["config"] = config
+
+                    res = client.models.generate_content(**kwargs)
+                    if res and res.text and len(res.text.strip()) > 5:
                         logger.info(f"[OmniRouter] ✅ Success from Gemini {model_name}!")
                         return res.text
                 except Exception as e:

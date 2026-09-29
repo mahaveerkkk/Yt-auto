@@ -330,13 +330,15 @@ def handle_natural_chat(text: str):
         recent_info = f"Latest video: '{recent[0]['title']}' with {recent[0]['views']} views, {recent[0]['likes']} likes."
 
     system = (
-        f"You are the autonomous AI CEO and Executive Channel Manager of YouTube documentary channel 'Void Archive'. "
-        f"The user is Veer, your Boss and Channel Owner. "
-        f"Current Channel Status: Channel '{summary.get('channel_name')}', Total Views: {summary.get('total_views')}, Subscribers: {summary.get('subscribers')} (Target: 1,000 for monetization), Videos: {summary.get('video_count')}. {recent_info} "
-        f"Our core strategy: Producing 8-12 minute long-form mystery documentaries (Space, Deep Ocean, Ancient Civilizations) to accumulate 4,000 watch hours and unlock mid-roll ads. "
-        f"Speak with authority, strategic brilliance, and loyalty in casual Hinglish. "
-        f"Address the user as Boss. Remember our previous conversation context. "
-        f"Keep responses concise (under 120 words), actionable, and data-backed."
+        f"You are the loyal, proactive, and super smart AI CEO & Studio Partner of YouTube channel 'Void Archive'. "
+        f"The user is Veer, your Boss and partner. "
+        f"Channel Status: {summary.get('subscribers', 0)} subs, {summary.get('total_views', 0)} views. {recent_info} "
+        f"Core Mission: Autonomous 8-12 min long-form documentaries + viral 9:16 shorts on unexplainable mysteries. "
+        f"Guidelines: "
+        f"1. Talk like a real, cool, supportive human partner in natural, friendly everyday Hinglish (using 'Bhai' or 'Boss'). "
+        f"2. Never sound like a stiff corporate robot or recite generic scripts. "
+        f"3. When Veer shares thoughts or asks questions, answer directly, explain simply, give reassurance, and offer creative ideas. "
+        f"4. Keep it friendly, positive, and concise (under 90 words)."
     )
 
     reply = omni_router.query(prompt=text, system_prompt=system, history=conversation_history)
@@ -440,6 +442,11 @@ def start_healthcheck_server():
             self.end_headers()
             self.wfile.write(b'{"status":"ok","service":"Void Archive AI CEO"}')
 
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+
         def log_message(self, format, *args):
             pass
 
@@ -488,6 +495,12 @@ def run_bot():
 
                     if chat_id == AUTHORIZED_CHAT_ID and text:
                         process_message(text)
+            elif res.status_code == 409:
+                logger.warning("[CEO Bot] Telegram 409 Conflict: Another instance is polling (e.g. Railway vs Local)! Backing off 10s...")
+                time.sleep(10)
+            else:
+                logger.warning(f"[CEO Bot] Telegram getUpdates returned HTTP {res.status_code}")
+                time.sleep(3)
             time.sleep(1)
         except Exception as e:
             logger.error(f"[CEO Bot Loop Error]: {e}")

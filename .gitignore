@@ -1,8 +1,8 @@
-config/
+config/.env
+config/youtube_token.json
 .env
 logs/
 __pycache__/
 core/__pycache__/
 notifier/__pycache__/
 utils/__pycache__/
-config/

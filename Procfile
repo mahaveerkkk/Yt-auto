@@ -1,1 +1,1 @@
-worker: python ceo_bot.py
+web: python ceo_bot.py
