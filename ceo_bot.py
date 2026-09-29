@@ -50,6 +50,10 @@ def send_tg(text: str, parse_mode: str = "Markdown"):
     ceo_comms.send_message(text, parse_mode=parse_mode)
 
 
+# Register real-time worker telemetry dispatcher
+worker_manager.set_notify_callback(send_tg)
+
+
 def send_tg_photo(photo_path: Path, caption: str):
     """Wrapper using ceo_comms."""
     ceo_comms.send_photo(photo_path, caption)

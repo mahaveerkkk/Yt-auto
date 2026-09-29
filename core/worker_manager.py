@@ -18,31 +18,65 @@ class WorkerManager:
         "director",
         "producer",
         "uploader",
+        "thumbnail",
         "ab_optimizer",
-        "ai_brain"
+        "ai_brain",
+        "qc"
     ]
 
+    WORKER_ICONS = {
+        "scout": "🕵️‍♂️",
+        "director": "✍️",
+        "producer": "🎨",
+        "uploader": "🚀",
+        "thumbnail": "🖼️",
+        "ab_optimizer": "📊",
+        "ai_brain": "🧠",
+        "qc": "🛡️"
+    }
+
     def __init__(self):
+        self.notify_callback = None
         # Initialize default records for all workers if not present
         for w in self.WORKERS:
             status = studio_memory.get_worker_status(w)
             if not status:
                 studio_memory.update_worker_status(w, status="idle", current_task="Standby for instructions")
 
+    def set_notify_callback(self, callback):
+        """Sets external callback (e.g. Telegram send_tg) for real-time telemetry broadcasts."""
+        self.notify_callback = callback
+
     def start_task(self, worker_name: str, task_desc: str):
-        """Marks a worker as actively executing a task."""
+        """Marks a worker as actively executing a task and broadcasts to War Room."""
         logger.info(f"[WorkerManager] 👷 Worker '{worker_name}' STARTED task: {task_desc}")
         studio_memory.update_worker_status(worker_name, status="working", current_task=task_desc)
+        if self.notify_callback:
+            try:
+                icon = self.WORKER_ICONS.get(worker_name.lower(), "👷")
+                self.notify_callback(f"{icon} *{worker_name.title()} Agent:* {task_desc}")
+            except Exception as e:
+                logger.debug(f"[WorkerManager] Broadcast failed: {e}")
 
     def complete_task(self, worker_name: str, result_summary: str = "Task completed successfully"):
         """Marks a worker as finished and returned to idle."""
         logger.info(f"[WorkerManager] ✅ Worker '{worker_name}' COMPLETED task: {result_summary}")
         studio_memory.update_worker_status(worker_name, status="idle", current_task=f"Idle (Last: {result_summary[:40]})")
+        if self.notify_callback and result_summary != "Task completed successfully":
+            try:
+                self.notify_callback(f"✅ *{worker_name.title()} Complete:* {result_summary}")
+            except Exception as e:
+                logger.debug(f"[WorkerManager] Broadcast failed: {e}")
 
     def report_error(self, worker_name: str, error_msg: str):
         """Flags an error on a worker."""
         logger.error(f"[WorkerManager] ❌ Worker '{worker_name}' encountered ERROR: {error_msg}")
         studio_memory.update_worker_status(worker_name, status="error", error_msg=error_msg[:200])
+        if self.notify_callback:
+            try:
+                self.notify_callback(f"⚠️ *{worker_name.title()} Alert:* {error_msg}")
+            except Exception as e:
+                logger.debug(f"[WorkerManager] Broadcast failed: {e}")
 
     def get_status_overview(self) -> Dict[str, Any]:
         """Returns structured health of all workers."""

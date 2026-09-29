@@ -136,6 +136,15 @@ class Director:
         # Stage 1: Narrative Voiceover Script
         narrative = self._generate_narrative_script(chosen_topic, target_duration_sec)
 
+        # Stage 1b: Pre-Render AI Quality Critic
+        from core.qc_validator import qc_validator
+        worker_manager.start_task("qc", "Auditing screenplay word count and retention hooks")
+        passed, msg, details = qc_validator.validate_script(narrative, min_words=850)
+        if passed:
+            worker_manager.complete_task("qc", f"Approved ({details.get('words')} words, ~{details.get('est_duration_min')}m, hook {details.get('hook_score', 8)}/10)")
+        else:
+            worker_manager.report_error("qc", f"Quality check warning: {msg}")
+
         # Stage 2: Metadata & Visual Scenes
         if narrative and len(narrative.split()) >= 600:
             metadata = self._generate_metadata_and_scenes(chosen_topic, narrative)

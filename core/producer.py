@@ -203,14 +203,17 @@ class Producer:
         return False
 
     def _create_3d_motion(self, img_path: Path, out_clip: Path, motion_type: str = "in", duration: float = 7.0):
-        """Creates smooth 3D Ken Burns camera pan/zoom clip from static image."""
+        """Creates Ken Burns 2.0 camera pan/zoom clip with dark vignette and archival film grain."""
         frames = int(duration * 30)
         if motion_type == "in":
-            vf = f"zoompan=z='min(zoom+0.0016,1.25)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=30"
+            base_pan = f"zoompan=z='min(zoom+0.0016,1.25)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=30"
         elif motion_type == "out":
-            vf = f"zoompan=z='if(lte(zoom,1.0),1.25,max(1.001,zoom-0.0016))':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=30"
+            base_pan = f"zoompan=z='if(lte(zoom,1.0),1.25,max(1.001,zoom-0.0016))':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=30"
         else:
-            vf = f"zoompan=z=1.15:d={frames}:x='iw/2-(iw/zoom/2)':y='if(lte(on,1),(ih-ih/zoom)/4,y+0.6)':s=1280x720:fps=30"
+            base_pan = f"zoompan=z=1.15:d={frames}:x='iw/2-(iw/zoom/2)':y='if(lte(on,1),(ih-ih/zoom)/4,y+0.6)':s=1280x720:fps=30"
+
+        # Archival film grading: dark vignette + subtle contrast & saturation boost + fine film grain
+        vf = f"{base_pan},vignette=PI/4,eq=contrast=1.08:saturation=1.12,noise=alls=6:allf=t+u"
 
         cmd = [
             "ffmpeg", "-y", "-loop", "1",
@@ -222,6 +225,36 @@ class Producer:
             str(out_clip)
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    def _generate_outro_clip(self, target_path: Path, duration: float = 12.0) -> bool:
+        """
+        Generates a 12-second branded mystery outro slate:
+        - Deep black/dark oceanic background
+        - High-contrast glowing text: 'INVESTIGATION CONCLUDED // CHOOSE NEXT DOSSIER'
+        - Provides designated space for YouTube's algorithm to render interactive end screens.
+        """
+        try:
+            draw_text = (
+                "drawtext=text='INVESTIGATION CONCLUDED':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=(h-text_h)/2-40:"
+                "shadowcolor=black:shadowx=3:shadowy=3,"
+                "drawtext=text='CHOOSE NEXT CLASSIFIED DOSSIER':fontcolor=yellow:fontsize=36:x=(w-text_w)/2:y=(h-text_h)/2+30:"
+                "shadowcolor=black:shadowx=2:shadowy=2,"
+                "vignette=PI/3,noise=alls=10:allf=t+u"
+            )
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", f"color=c=black:s=1280x720:d={duration}",
+                "-vf", draw_text,
+                "-t", str(duration),
+                "-r", "30",
+                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                str(target_path)
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            return target_path.exists()
+        except Exception as e:
+            logger.warning(f"[Producer] Outro slate generation error: {e}")
+            return False
 
     def produce_full_documentary(self, manifest: Dict[str, Any]) -> Optional[Path]:
         """Executes full long-form documentary production with high visual diversity & natural voice."""
@@ -288,6 +321,11 @@ class Producer:
             logger.error("[Producer] Insufficient visual clips assembled.")
             worker_manager.report_error("producer", "Insufficient visuals generated")
             return None
+
+        # Append 12-second branded mystery outro slate for YouTube End Screen cards
+        outro_clip = self.temp_dir / "outro_slate.mp4"
+        if self._generate_outro_clip(outro_clip, duration=12.0):
+            ready_clips.append(outro_clip)
 
         # 3. Concatenate all distinct scene clips with FFmpeg filter_complex (Normalizing SAR=1)
         merged_video = self.temp_dir / "merged_scenes.mp4"

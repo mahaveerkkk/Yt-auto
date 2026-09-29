@@ -6,6 +6,8 @@ from typing import Dict, Any, List, Optional
 from config.settings import settings
 from utils.logger import logger
 from core.worker_manager import worker_manager
+from core.omni_router import omni_router
+from core.studio_memory import studio_memory
 
 
 class Scout:
@@ -159,19 +161,84 @@ class Scout:
         logger.info(f"[Scout] Scraped {len(channel_topics)} recent inspiration topics from YouTube RSS.")
         return channel_topics
 
+    def _polish_viral_title(self, raw_candidate: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Uses Gemini OmniRouter to transform raw headlines or viewer requests into
+        an elite, psychological click-magnet mystery title and narrative angle.
+        """
+        raw_topic = raw_candidate.get("topic", "")
+        category = raw_candidate.get("category", "Mystery")
+        raw_angle = raw_candidate.get("angle", "")
+
+        prompt = (
+            f"You are the Lead YouTube Showrunner for 'Void Archive' (mystery, ocean abyss, dark space, ancient forbidden history).\n"
+            f"Given this raw discovery or headline:\n"
+            f"Raw Topic: '{raw_topic}'\n"
+            f"Category: '{category}'\n"
+            f"Context: '{raw_angle}'\n\n"
+            f"Transform this into an elite, blockbuster YouTube documentary dossier:\n"
+            f"1. 'topic': A high-CTR, psychological mystery title (under 65 chars, dramatic, curiosity-inducing, e.g. 'The 7-Mile Abyss That Swallowed 5 Submarines').\n"
+            f"2. 'angle': A gripping 3-act narrative hook (under 120 words) with 2 unanswered questions that force viewers to watch till the end.\n"
+            f"3. 'keywords': An array of 4 distinct visual keywords for cinematic HD stock video and AI image generation.\n\n"
+            f"Return ONLY valid JSON matching this exact structure:\n"
+            f'{{"topic": "...", "angle": "...", "keywords": ["...", "..."]}}'
+        )
+
+        try:
+            res = omni_router.query(prompt=prompt)
+            if res:
+                clean = res.strip()
+                if "{" in clean and "}" in clean:
+                    clean = clean[clean.find("{"):clean.rfind("}")+1]
+                    data = json.loads(clean)
+                    if data.get("topic") and len(data.get("topic")) > 5:
+                        logger.info(f"[Scout] ✨ Polished '{raw_topic}' -> '{data.get('topic')}'")
+                        return {
+                            "category": category,
+                            "topic": data.get("topic").strip().replace('"', ''),
+                            "angle": data.get("angle", raw_angle).strip(),
+                            "keywords": data.get("keywords") or raw_candidate.get("keywords", [])
+                        }
+        except Exception as e:
+            logger.warning(f"[Scout] Viral title polishing skipped: {e}")
+
+        return raw_candidate
+
     def pick_next_viral_topic(self, user_override: Optional[str] = None) -> Dict[str, Any]:
-        """Chooses the next high-retention viral topic with zero repetition."""
-        worker_manager.start_task("scout", "Evaluating web trends, YouTube RSS, and high-RPM candidate pool")
+        """Chooses the next high-retention viral topic with zero repetition and Gemini hook polishing."""
+        worker_manager.start_task("scout", "Evaluating web trends, YouTube RSS, and audience suggestions")
 
         if user_override:
             logger.info(f"[Scout] Using commissioned topic: '{user_override}'")
-            worker_manager.complete_task("scout", f"Topic selected: {user_override}")
-            return {
+            candidate = {
                 "category": "Special Investigation",
                 "topic": user_override,
                 "angle": f"In-depth classified investigation of {user_override}",
                 "keywords": [user_override]
             }
+            polished = self._polish_viral_title(candidate)
+            worker_manager.complete_task("scout", f"Topic selected: {polished['topic']}")
+            return polished
+
+        # 0. Check for viewer-requested topics mined from comments in content_calendar
+        try:
+            planned_items = studio_memory.get_calendar(status="planned")
+            if planned_items:
+                top_viewer = planned_items[0]
+                studio_memory.update_calendar_status(top_viewer["id"], "producing")
+                raw_cand = {
+                    "category": top_viewer.get("category", "Audience Dossier"),
+                    "topic": top_viewer.get("topic", ""),
+                    "angle": f"Audience-commissioned investigation into {top_viewer.get('topic')}",
+                    "keywords": top_viewer.get("topic", "").split()[:4]
+                }
+                logger.info(f"[Scout] 🎯 Prioritizing viewer-requested topic from comments: '{raw_cand['topic']}'")
+                polished = self._polish_viral_title(raw_cand)
+                self._save_history(polished["topic"])
+                worker_manager.complete_task("scout", f"Audience topic locked: {polished['topic']}")
+                return polished
+        except Exception as ce:
+            logger.debug(f"[Scout] Content calendar check skipped: {ce}")
 
         history = self._load_history()
 
@@ -180,20 +247,22 @@ class Scout:
         fresh_live = [t for t in live_news if t["topic"] not in history]
         if fresh_live and random.random() < 0.35:
             chosen = random.choice(fresh_live)
-            self._save_history(chosen["topic"])
-            logger.info(f"[Scout] Selected LIVE web trend: '{chosen['topic']}'")
-            worker_manager.complete_task("scout", f"Selected Live: {chosen['topic']}")
-            return chosen
+            polished = self._polish_viral_title(chosen)
+            self._save_history(polished["topic"])
+            logger.info(f"[Scout] Selected LIVE web trend: '{polished['topic']}'")
+            worker_manager.complete_task("scout", f"Live trend locked: {polished['topic']}")
+            return polished
 
         # 2. 25% chance: Pick viral topic from high-performing YouTube RSS channels
         yt_trends = self.fetch_youtube_channel_trends()
         fresh_yt = [t for t in yt_trends if t["topic"] not in history]
         if fresh_yt and random.random() < 0.25:
             chosen = random.choice(fresh_yt)
-            self._save_history(chosen["topic"])
-            logger.info(f"[Scout] Selected YouTube RSS inspiration: '{chosen['topic']}'")
-            worker_manager.complete_task("scout", f"Selected YT RSS: {chosen['topic']}")
-            return chosen
+            polished = self._polish_viral_title(chosen)
+            self._save_history(polished["topic"])
+            logger.info(f"[Scout] Selected YouTube RSS inspiration: '{polished['topic']}'")
+            worker_manager.complete_task("scout", f"YT inspiration locked: {polished['topic']}")
+            return polished
 
         # 3. 40% chance (or fallback): Select from High-RPM Curated Documentary Pool
         candidates = [t for t in self.CURATED_HIGH_RPM_POOLS if t["topic"] not in history]
@@ -201,9 +270,10 @@ class Scout:
             candidates = self.CURATED_HIGH_RPM_POOLS
 
         chosen = random.choice(candidates)
+        # Even curated topics can be enriched or used as-is
         self._save_history(chosen["topic"])
         logger.info(f"[Scout] Selected High-RPM topic: '{chosen['topic']}' (Category: {chosen['category']})")
-        worker_manager.complete_task("scout", f"Selected Pool: {chosen['topic']}")
+        worker_manager.complete_task("scout", f"High-RPM topic locked: {chosen['topic']}")
         return chosen
 
 

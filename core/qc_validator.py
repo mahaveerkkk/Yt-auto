@@ -58,5 +58,43 @@ class QCValidator:
             logger.error(f"FFprobe QC error: {e}")
             return False, f"FFprobe analysis error: {e}"
 
+    def validate_script(self, script_text: str, min_words: int = 950) -> Tuple[bool, str, dict]:
+        """
+        AI Quality Gate: Evaluates documentary script word count, duration estimate,
+        and narrative retention hooks before audio/video rendering.
+        """
+        if not script_text or not script_text.strip():
+            return False, "Script is empty.", {"words": 0, "score": 0}
+
+        words = len(script_text.split())
+        est_duration_min = round(words / 135, 1)
+
+        # 1. Word Count Check (Mid-Roll Ad 8+ Minute Guarantee)
+        if words < min_words:
+            return False, f"Script length insufficient ({words} words / ~{est_duration_min} mins). Requires {min_words}+ words for mid-roll monetization.", {
+                "words": words,
+                "est_duration_min": est_duration_min,
+                "score": 4
+            }
+
+        # 2. Hook & Suspense Tone Evaluation (First 250 words)
+        cold_open = " ".join(script_text.split()[:250]).lower()
+        mystery_markers = [
+            "?", "anomaly", "unexplained", "vanished", "secret", "declassified",
+            "abyss", "depths", "strange", "baffled", "impossible", "mysterious", "classified"
+        ]
+        marker_hits = sum(1 for m in mystery_markers if m in cold_open)
+        hook_score = min(10, 5 + marker_hits)
+
+        if marker_hits < 2:
+            logger.warning(f"[QC] Cold open hook has low mystery tension (score: {hook_score}/10).")
+
+        logger.info(f"✅ Script QC Passed: {words} words (~{est_duration_min} mins), Hook Tension: {hook_score}/10")
+        return True, f"Script passed QC: {words} words (~{est_duration_min} mins)", {
+            "words": words,
+            "est_duration_min": est_duration_min,
+            "hook_score": hook_score
+        }
+
 
 qc_validator = QCValidator()
