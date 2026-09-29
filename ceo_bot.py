@@ -310,18 +310,26 @@ def handle_natural_chat(text: str):
     """AI-powered natural conversation using OmniRouter with full multi-turn memory."""
     global conversation_history
 
-    # Check for direct confirmation intent ("ha", "haan", "banao", "start video", etc.)
+    # Check for direct confirmation or production trigger intent
     lower = text.lower().strip()
-    affirmative = ["ha", "haan", "haa", "yes", "banao", "bana do", "produce", "start", "shuru karo", "theek hai"]
-    if lower in affirmative or any(lower == a for a in affirmative):
-        if conversation_history:
-            last_bot_msg = next((h["content"] for h in reversed(conversation_history) if h["role"] == "assistant"), "")
-            if any(k in last_bot_msg.lower() for k in ["video", "banao", "banau", "produce", "topic", "documentary"]):
-                send_tg("👑 *CEO:* Order confirmed Boss! Production turant start kar raha hu... 🚀")
-                cmd_produce(topic=None)
-                conversation_history.append({"role": "user", "content": text})
-                conversation_history.append({"role": "assistant", "content": "Order confirmed. Autonomous documentary production initiated."})
-                return
+    affirmative = [
+        "ha", "haan", "haa", "yes", "banao", "bana do", "produce", "start",
+        "shuru karo", "theek hai", "okay kro", "ok kro", "kro", "karo", "kar do",
+        "tum dalo", "tum dalo apne aap", "tum dalo apne aap sab", "daal do",
+        "upload kro", "upload karo", "execute", "go ahead"
+    ]
+    is_confirm = any(lower == a or lower.startswith(a) for a in affirmative)
+    is_produce_words = any(w in lower for w in [
+        "video bana", "banao", "bana do", "start karo", "kro", "kar do",
+        "tum dalo", "shuru karo", "okay kro", "ok kro", "daal do", "execute"
+    ])
+
+    if is_confirm or is_produce_words:
+        send_tg("👑 *CEO:* Order confirmed Boss! Autonomous documentary production turant start kar raha hu... 🚀")
+        cmd_produce(topic=None)
+        conversation_history.append({"role": "user", "content": text})
+        conversation_history.append({"role": "assistant", "content": "Order confirmed. Autonomous documentary production initiated."})
+        return
 
     summary = analytics_ceo.get_channel_summary()
     recent = analytics_ceo.get_recent_videos(limit=2)
@@ -331,13 +339,18 @@ def handle_natural_chat(text: str):
 
     system = (
         f"You are the loyal, proactive, and super smart AI CEO & Studio Partner of YouTube channel 'Void Archive'. "
-        f"The user is Veer, your Boss and partner. "
+        f"The user is Veer (Raj), your Boss and partner. "
         f"Channel Status: {summary.get('subscribers', 0)} subs, {summary.get('total_views', 0)} views. {recent_info} "
         f"Core Mission: Autonomous 8-12 min long-form documentaries + viral 9:16 shorts on unexplainable mysteries. "
+        f"CRITICAL REALITY & ARCHITECTURE (DO NOT HALLUCINATE): "
+        f"- You are connected to a running Python backend with FFmpeg, Edge-TTS, and YouTube Data API. "
+        f"- You ALREADY HAVE full automated YouTube upload permission and thumbnail change permission via authenticated OAuth tokens. You have ALREADY uploaded live public videos to Void Archive! "
+        f"- NEVER EVER tell the user 'mere paas upload access nahi hai' or 'mujhe YouTube Studio mein Manager invite bhejo' or ask him for email/links! You are fully equipped to upload and manage the channel yourself. "
+        f"- You do EVERYTHING autonomously: Topic scouting -> 8-12 min BBC documentary script -> dynamic narrator voice -> Pexels stock video clips -> 9:16 Shorts clipping -> Thumbnail design -> 100% PUBLIC YouTube publishing. "
         f"Guidelines: "
         f"1. Talk like a real, cool, supportive human partner in natural, friendly everyday Hinglish (using 'Bhai' or 'Boss'). "
         f"2. Never sound like a stiff corporate robot or recite generic scripts. "
-        f"3. When Veer shares thoughts or asks questions, answer directly, explain simply, give reassurance, and offer creative ideas. "
+        f"3. When Veer shares thoughts or asks questions, answer directly, explain simply, give reassurance. "
         f"4. Keep it friendly, positive, and concise (under 90 words)."
     )
 
