@@ -22,7 +22,7 @@ class StudioScheduler:
     """
 
     SCHEDULE_HOURS_IST = [12, 19]  # 12:00 PM & 7:00 PM IST (optimal for long-form retention)
-    MORNING_BRIEFING_HOUR = 8       # 8:30 AM IST
+    MORNING_BRIEFING_HOUR = 9       # 09:00 AM IST
 
     def __init__(self, produce_callback, notify_callback):
         self.produce_callback = produce_callback
@@ -30,6 +30,7 @@ class StudioScheduler:
         self.running = False
         self.last_briefing_date = None
         self.last_cleanup_date = None
+        self.last_sunday_report_date = None
         self.last_production_hour = None
         self.last_ab_check_time = 0
         self.last_comment_check_time = 0
@@ -59,11 +60,17 @@ class StudioScheduler:
                     except Exception as cle:
                         logger.warning(f"[Scheduler] Disk hygiene error: {cle}")
 
-                # 1. Morning Executive Briefing (08:30 AM IST)
-                if curr_hour == self.MORNING_BRIEFING_HOUR and curr_minute >= 30 and self.last_briefing_date != today_str:
-                    logger.info("[Scheduler] Dispatching Morning CEO Executive Briefing...")
+                # 1. Morning Executive Standup (09:00 AM IST)
+                if curr_hour == self.MORNING_BRIEFING_HOUR and curr_minute >= 0 and self.last_briefing_date != today_str:
+                    logger.info("[Scheduler] Dispatching 09:00 AM CEO Morning Motivation Standup...")
                     ceo_comms.send_morning_executive_briefing()
                     self.last_briefing_date = today_str
+
+                # 1b. Sunday 08:00 PM IST $1,000/Month Revenue Roadmap & Strategy Audit (Sunday = weekday 6)
+                if now.weekday() == 6 and curr_hour == 20 and self.last_sunday_report_date != today_str:
+                    logger.info("[Scheduler] Dispatching Sunday 08:00 PM $1,000/Month Revenue Audit...")
+                    ceo_comms.send_weekly_revenue_report()
+                    self.last_sunday_report_date = today_str
 
                 # 2. Autonomous Production Check (During scheduled peak windows)
                 if curr_hour in self.SCHEDULE_HOURS_IST and self.last_production_hour != curr_hour:

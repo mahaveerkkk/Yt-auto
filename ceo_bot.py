@@ -35,6 +35,7 @@ from core.shorts_clipper import shorts_clipper
 from core.playlist_manager import playlist_manager
 from core.comment_responder import comment_responder
 from core.community_manager import community_manager
+from core.tech_scout import tech_scout
 
 BOT_TOKEN = settings.TELEGRAM_BOT_TOKEN
 AUTHORIZED_CHAT_ID = str(settings.TELEGRAM_CHAT_ID)
@@ -485,6 +486,8 @@ def process_message(text: str):
             "🎬 `/produce` — Autonomous long-form documentary (8-12 min)\n"
             "🎯 `/produce [topic]` — Custom commissioned documentary\n"
             "🖼️ `/pick A` or `/pick B` — Choose documentary thumbnail\n"
+            "🔬 `/tech_radar` — Future open-source tools & AI upgrade radar\n"
+            "💰 `/revenue` — $1,000/Month revenue roadmap & weekly audit\n"
             "⚡ `/short` — Generate instant 9:16 viral Short\n"
             "📈 `/analyze` — Latest video post-mortem\n"
             "🛑 `/stop` — Cancel active production\n\n"
@@ -501,6 +504,22 @@ def process_message(text: str):
             send_tg("🎯 *Cover Selection Registered:* Option A will be used for YouTube upload!")
         else:
             send_tg("ℹ️ Usage: `/pick A` ya `/pick B`")
+    elif lower.startswith("/tech") or lower.startswith("/radar"):
+        send_tg(tech_scout.format_tech_radar_telegram())
+    elif lower.startswith("/revenue") or lower.startswith("/audit"):
+        ceo_comms.send_weekly_revenue_report()
+    elif lower.startswith("/delete"):
+        send_tg(
+            "🛑 *SECURITY GUARDRAIL (Tier 3 Permission):*\n"
+            "AI CEO is strictly prohibited from deleting or unlisting public YouTube videos autonomously!\n"
+            "Agar aapko sach mein kisi video ko delete karna hai, toh command bhejo: `/confirm_delete [video_id]`"
+        )
+    elif lower.startswith("/confirm_delete"):
+        vid_id = text.replace("/confirm_delete", "").strip()
+        if vid_id:
+            send_tg(f"⚠️ *Manual Deletion Notice:* Boss requested deletion for video `{vid_id}`. Please delete manually in YouTube Studio for 100% channel safety.")
+        else:
+            send_tg("ℹ️ Usage: `/confirm_delete [video_id]`")
     elif lower.startswith("/status") or lower.startswith("/stat"):
         cmd_status()
     elif lower.startswith("/worker"):

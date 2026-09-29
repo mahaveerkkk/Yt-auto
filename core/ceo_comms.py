@@ -53,28 +53,80 @@ class CEOComms:
             logger.error(f"[CEOComms] Photo transmission failed: {e}")
             return False
 
+    @staticmethod
+    def _render_progress_bar(current: float, target: float, length: int = 10) -> str:
+        """Draws clean ASCII progress bar for milestone tracking."""
+        pct = min(1.0, max(0.0, current / target)) if target > 0 else 0.0
+        filled = int(round(length * pct))
+        bar = "▓" * filled + "░" * (length - filled)
+        return f"[{bar}] {pct*100:.1f}%"
+
     def send_morning_executive_briefing(self):
-        """Dispatches daily strategic roadmap and monetization status."""
+        """Dispatches daily 09:00 AM IST high-motivation standup with live monetization progress."""
         summary = analytics_ceo.get_channel_summary()
         strategy_info = strategy_engine.evaluate_channel_trajectory()
         health = watchdog.get_system_health()
 
+        subs = int(summary.get("subscribers", 0))
+        views = int(summary.get("total_views", 0))
+        # Estimate watch hours based on average 5.5 min watch time per view
+        est_watch_hours = round((views * 5.5) / 60, 1)
+
+        sub_bar = self._render_progress_bar(subs, 1000)
+        watch_bar = self._render_progress_bar(est_watch_hours, 4000)
+
         briefing = (
-            "☀️ *GOOD MORNING BOSS! — CEO Executive Briefing*\n\n"
-            f"📺 *Void Archive Channel Performance:*\n"
-            f"• Subscribers: *{summary.get('subscribers', '0')}* / 1,000 target\n"
-            f"• Lifetime Views: *{summary.get('total_views', '0')}*\n"
-            f"• Total Videos: *{summary.get('video_count', '0')}*\n\n"
-            f"🎯 *Monetization Strategy Focus:*\n"
-            f"• Long-Form Production: 8-12 min documentaries for mid-roll ads\n"
-            f"• Channel Phase: `{strategy_info.get('phase')}`\n"
-            f"• Primary Niche Focus: _{strategy_info.get('top_category', 'Deep Space & Ocean')}_\n\n"
-            f"⚙️ *System Health & VPS Telemetry:*\n"
+            "🌅 *GOOD MORNING BOSS! — CEO Daily Standup (09:00 AM IST)*\n\n"
+            "Boss, aaj target mystery space mein top position capture karne ka hai! 🚀\n"
+            "Studio autopilot 24/7 rock-solid chal raha hai.\n\n"
+            "🎯 *YouTube Partner Monetization Milestones:*\n"
+            f"• 👥 Subscribers: *{subs}* / 1,000 Target\n"
+            f"  ↳ `{sub_bar}`\n"
+            f"• ⏳ Watch Time: *~{est_watch_hours} hrs* / 4,000 Target\n"
+            f"  ↳ `{watch_bar}`\n\n"
+            f"📊 *Channel Lifetime Stats:*\n"
+            f"• Total Public Views: *{views}*\n"
+            f"• Published Videos: *{summary.get('video_count', '0')}*\n"
+            f"• Primary Content Pillar: _{strategy_info.get('top_category', 'Deep Ocean & Space Abyss')}_\n\n"
+            f"⚙️ *Studio Infrastructure:*\n"
             f"• VPS Disk Free: `{health.get('disk_free_gb')} GB`\n"
-            f"• Studio Workers: `100% Autonomous & Operational`\n\n"
-            "Studio team is ready for today's scheduled production runs! 🚀"
+            f"• Production Slots Today: `12:00 PM & 07:00 PM IST`\n\n"
+            "Bhai, tension mat lo — content pipeline apne aap execute karegi. Let's dominate! 🔥"
         )
         self.send_message(briefing)
+
+    def send_weekly_revenue_report(self):
+        """Dispatches Sunday 08:00 PM IST $1,000/Month Revenue Roadmap & Strategy Audit."""
+        summary = analytics_ceo.get_channel_summary()
+        strategy_info = strategy_engine.evaluate_channel_trajectory()
+        views = int(summary.get("total_views", 0))
+        subs = int(summary.get("subscribers", 0))
+
+        # $1,000/mo target modeling: Category 28 CPM ~$5.00 - $6.50
+        # Target: ~180,000 - 200,000 views per month
+        est_monthly_views = views * 4  # projection multiplier
+        est_cpm = 5.50
+        est_monthly_revenue = round((est_monthly_views / 1000) * est_cpm, 2)
+        revenue_bar = self._render_progress_bar(est_monthly_revenue, 1000)
+
+        report = (
+            "📊 *SUNDAY EXECUTIVE AUDIT — $1,000/MONTH ROADMAP*\n\n"
+            "Boss, poore hafte ka strategic review ready hai:\n\n"
+            f"💰 *Revenue Trajectory Target ($1,000 / Month):*\n"
+            f"• Projected Monthly Earnings: *${est_monthly_revenue}* / $1,000\n"
+            f"  ↳ `{revenue_bar}`\n"
+            f"• Category 28 Science CPM: `~${est_cpm} per 1K views`\n\n"
+            f"📈 *Channel Velocity:*\n"
+            f"• Total Public Views: *{views}*\n"
+            f"• Subscriber Base: *{subs}* members\n"
+            f"• Top Performing Mystery Pillar: *{strategy_info.get('top_category', 'Deep Ocean')}*\n\n"
+            "🎯 *Upcoming Week's Focus:*\n"
+            "1. 2 High-Retention (8-12 min) Master Documentaries with SFX & Chapters\n"
+            "2. 3-4 High-Yield 9:16 Shorts to drive subscriber acceleration\n"
+            "3. Auto-Playlists for binge-watching watch-hour compounding\n\n"
+            "Poori team ready hai. We are on track for monetization! 🚀👑"
+        )
+        self.send_message(report)
 
     def send_upload_success_alert(self, title: str, yt_url: str, duration_sec: float, category: str, thumb_path: Optional[Path] = None):
         """Celebrates and logs a successfully published PUBLIC documentary."""

@@ -150,6 +150,20 @@ class StudioMemory:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 9. Autonomous R&D Tech Discoveries
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tech_discoveries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tool_name TEXT UNIQUE,
+                    category TEXT,
+                    source_url TEXT,
+                    description TEXT,
+                    potential_benefit TEXT,
+                    status TEXT DEFAULT 'pending_review',
+                    discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             conn.commit()
 
     # ---------------- Video Records ----------------
@@ -391,6 +405,32 @@ class StudioMemory:
                 return [dict(r) for r in cursor.fetchall()]
         except Exception as e:
             logger.error(f"[StudioMemory] Fetch comments failed: {e}")
+            return []
+
+    # ---------------- Autonomous R&D Tech Discoveries ----------------
+    def record_tech_discovery(self, tool_name: str, category: str, source_url: str,
+                              description: str, potential_benefit: str) -> bool:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.cursor().execute("""
+                    INSERT OR REPLACE INTO tech_discoveries (tool_name, category, source_url, description, potential_benefit, discovered_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (tool_name, category, source_url, description, potential_benefit, datetime.utcnow()))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[StudioMemory] Record tech discovery failed: {e}")
+            return False
+
+    def get_tech_discoveries(self, limit: int = 6) -> List[Dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM tech_discoveries ORDER BY discovered_at DESC LIMIT ?", (limit,))
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[StudioMemory] Fetch tech discoveries failed: {e}")
             return []
 
 
