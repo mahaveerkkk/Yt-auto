@@ -8,3 +8,5 @@ notifier/__pycache__/
 utils/__pycache__/
 logs
 config/client_secrets.json
+logs
+config/client_secrets.json
