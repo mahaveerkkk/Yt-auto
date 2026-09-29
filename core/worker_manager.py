@@ -47,10 +47,12 @@ class WorkerManager:
         """Sets external callback (e.g. Telegram send_tg) for real-time telemetry broadcasts."""
         self.notify_callback = callback
 
-    def start_task(self, worker_name: str, task_desc: str):
+    def start_task(self, worker_name: str, task_desc: str, broadcast: bool = True):
         """Marks a worker as actively executing a task and broadcasts to War Room."""
         logger.info(f"[WorkerManager] 👷 Worker '{worker_name}' STARTED task: {task_desc}")
         studio_memory.update_worker_status(worker_name, status="working", current_task=task_desc)
+        if worker_name.lower() in ("ai_brain",) or not broadcast:
+            return
         if self.notify_callback:
             try:
                 icon = self.WORKER_ICONS.get(worker_name.lower(), "👷")
@@ -58,10 +60,12 @@ class WorkerManager:
             except Exception as e:
                 logger.debug(f"[WorkerManager] Broadcast failed: {e}")
 
-    def complete_task(self, worker_name: str, result_summary: str = "Task completed successfully"):
+    def complete_task(self, worker_name: str, result_summary: str = "Task completed successfully", broadcast: bool = True):
         """Marks a worker as finished and returned to idle."""
         logger.info(f"[WorkerManager] ✅ Worker '{worker_name}' COMPLETED task: {result_summary}")
         studio_memory.update_worker_status(worker_name, status="idle", current_task=f"Idle (Last: {result_summary[:40]})")
+        if worker_name.lower() in ("ai_brain",) or not broadcast:
+            return
         if self.notify_callback and result_summary != "Task completed successfully":
             try:
                 self.notify_callback(f"✅ *{worker_name.title()} Complete:* {result_summary}")

@@ -74,12 +74,12 @@ class StudioScheduler:
 
                 # 2. Autonomous Production Check (During scheduled peak windows)
                 if curr_hour in self.SCHEDULE_HOURS_IST and self.last_production_hour != curr_hour:
+                    self.last_production_hour = curr_hour
                     decision = ai_brain.should_produce_now()
                     if decision.get("allowed"):
                         logger.info(f"[Scheduler] Slot triggered: Hour {curr_hour}:00 IST. AI Brain approved production.")
                         self.notify_callback(f"⏰ *Autonomous Production Triggered ({curr_hour}:00 IST)!*\nAI Brain verified quotas & schedule. Deploying documentary team...")
                         self.produce_callback(topic=None)
-                        self.last_production_hour = curr_hour
                     else:
                         logger.info(f"[Scheduler] Production postponed: {decision.get('reason')}")
 
