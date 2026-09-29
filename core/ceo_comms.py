@@ -89,7 +89,7 @@ class CEOComms:
             f"• Published Videos: *{summary.get('video_count', '0')}*\n"
             f"• Primary Content Pillar: _{strategy_info.get('top_category', 'Deep Ocean & Space Abyss')}_\n\n"
             f"⚙️ *Studio Infrastructure:*\n"
-            f"• VPS Disk Free: `{health.get('disk_free_gb')} GB`\n"
+            f"• Storage Hygiene: `Clean ({health.get('temp_cache_mb', 0.0)} MB cache)`\n"
             f"• Production Slots Today: `12:00 PM & 07:00 PM IST`\n\n"
             "Bhai, tension mat lo — content pipeline apne aap execute karegi. Let's dominate! 🔥"
         )

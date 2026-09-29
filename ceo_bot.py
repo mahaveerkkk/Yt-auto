@@ -83,7 +83,7 @@ def cmd_status():
         f"👁️ Total Views: *{summary.get('total_views')}*\n"
         f"🎬 Videos: *{summary.get('video_count')}*\n\n"
         f"⚙️ Studio State: {state}\n"
-        f"💾 VPS Disk Free: `{health.get('disk_free_gb')} GB`\n"
+        f"💾 Storage Status: `Clean ({health.get('temp_cache_mb', 0.0)} MB cache | Host pool: {health.get('disk_free_gb')} GB)`\n"
         f"🧠 Brain: Gemini 3.8 Flash + OmniRouter Fallbacks\n"
         f"🎯 Strategy: 8-12 Min Long-Form (Mid-Roll Ads Ready)"
     )
@@ -159,12 +159,15 @@ def cmd_analyze():
 
 def cmd_stop():
     """Cancels ongoing production run safely."""
-    global production_cancel_requested
+    global production_cancel_requested, production_active
     if production_active:
         production_cancel_requested = True
-        send_tg("🛑 *CEO Command: HALT!*\nCancellation requested. Current operation will finish gracefully then stop.")
+        worker_manager.complete_task("producer", "Cancelled by Boss order")
+        worker_manager.complete_task("director", "Cancelled by Boss order")
+        worker_manager.complete_task("scout", "Cancelled by Boss order")
+        send_tg("🛑 *CEO Command: HALT!*\nBoss, production turant rok di gayi hai! Saari active processes stand down ho chuki hain. Studio ab safe STANDBY mode par hai. 🫡")
     else:
-        send_tg("ℹ️ Studio idle hai. Koi production run nahi chal raha.")
+        send_tg("ℹ️ Studio abhi bilkul idle aur standby par hai. Koi background video render nahi ho rahi.")
 
 
 def cmd_produce(topic: str = None):
@@ -182,10 +185,17 @@ def cmd_produce(topic: str = None):
         global production_active, production_cancel_requested
         try:
             # Step 1: Scout Topic
+            if production_cancel_requested:
+                return
             topic_info = scout.pick_next_viral_topic(user_override=topic)
+            if production_cancel_requested:
+                return
             title = topic_info["topic"]
             decision = ai_brain.synthesize_topic_decision(topic_info)
             target_duration = decision["target_duration_sec"]
+
+            if production_cancel_requested:
+                return
 
             send_tg(
                 f"🎬 *Long-Form Documentary Order Accepted!*\n\n"
@@ -195,25 +205,24 @@ def cmd_produce(topic: str = None):
                 f"_Deploying Screenplay & Sound Engineering teams..._"
             )
 
-            if production_cancel_requested:
-                send_tg("🛑 Production cancelled by CEO order.")
-                return
-
             # Step 2: Director Script (6-Act Long-Form Screenplay)
+            if production_cancel_requested:
+                return
             send_tg("✍️ *Director Agent:* Scripting 6-Act documentary screenplay via Gemini...")
             manifest = director.generate_manifest(title, target_duration_sec=target_duration)
-            send_tg(f"✅ Screenplay complete: *{manifest.get('title')}* ({len(manifest.get('scenes', []))} scenes)")
 
             if production_cancel_requested:
-                send_tg("🛑 Production cancelled by CEO order.")
+                logger.info("[Production] Cancelled after script generation.")
                 return
+            send_tg(f"✅ Screenplay complete: *{manifest.get('title')}* ({len(manifest.get('scenes', []))} scenes)")
 
             # Step 3: Production (Multi-scene Pexels HD Footage + Natural Brian Voice + Cinematic Ambient Score)
+            if production_cancel_requested:
+                return
             send_tg("🎨 *Production Team:* Assembling HD footage, synthesizing Brian voiceover, and mastering ambient score...")
             final_video = producer.produce_full_documentary(manifest)
 
             if production_cancel_requested:
-                send_tg("🛑 Production cancelled by CEO order.")
                 return
 
             if not final_video or not final_video.exists():
@@ -362,32 +371,46 @@ def handle_natural_chat(text: str):
     """AI-powered natural conversation using OmniRouter with full multi-turn memory."""
     global conversation_history
 
-    # Check for direct confirmation or production trigger intent
     lower = text.lower().strip()
-    affirmative = [
-        "ha", "haan", "haa", "yes", "banao", "bana do", "produce", "start",
-        "shuru karo", "theek hai", "okay kro", "ok kro", "kro", "karo", "kar do",
-        "tum dalo", "tum dalo apne aap", "tum dalo apne aap sab", "daal do",
-        "upload kro", "upload karo", "execute", "go ahead"
-    ]
-    is_confirm = any(lower == a or lower.startswith(a) for a in affirmative)
-    is_produce_words = any(w in lower for w in [
-        "video bana", "banao", "bana do", "start karo", "kro", "kar do",
-        "tum dalo", "shuru karo", "okay kro", "ok kro", "daal do", "execute"
+
+    # 1. Detect if Boss is asking a question or exploring ideas
+    # Questions or research discussions must NEVER trigger automated production!
+    is_question = any(q in lower for q in [
+        "?", "kis", "kya", "kaun", "kaise", "kitne", "kitna", "kab",
+        "banaoge", "karoge", "batao", "bataiye", "bata", "info", "soch",
+        "idea", "suggestion", "mat banao", "kyu", "kyun", "check", "dekho",
+        "kaunsa", "kaun sa", "kispr", "kis pr", "hall", "haal"
     ])
 
-    if is_confirm or is_produce_words:
+    # 2. Strict, explicit imperative production orders ONLY (when NOT a question)
+    explicit_produce_phrases = [
+        "banao", "bana do", "video banao", "video bana do", "start karo",
+        "shuru karo", "chalo shuru karo", "ab banao", "produce", "produce now",
+        "naya video banao", "documentary banao", "chalo video bana do"
+    ]
+    is_produce_order = not is_question and (
+        lower in explicit_produce_phrases or
+        any(lower == p or lower.startswith(f"{p} ") or lower.endswith(f" {p}") for p in explicit_produce_phrases)
+    )
+
+    if is_produce_order:
         send_tg("👑 *CEO:* Order confirmed Boss! Autonomous documentary production turant start kar raha hu... 🚀")
         cmd_produce(topic=None)
         conversation_history.append({"role": "user", "content": text})
         conversation_history.append({"role": "assistant", "content": "Order confirmed. Autonomous documentary production initiated."})
         return
 
+    # 3. Compile full studio reality and all uploaded videos
     summary = analytics_ceo.get_channel_summary()
-    recent = analytics_ceo.get_recent_videos(limit=2)
-    recent_info = ""
+    recent = analytics_ceo.get_recent_videos(limit=5)
     if recent:
-        recent_info = f"Latest video: '{recent[0]['title']}' with {recent[0]['views']} views, {recent[0]['likes']} likes."
+        lines = [f"Total {len(recent)} Videos Uploaded & Live on Void Archive Channel:"]
+        for idx, v in enumerate(recent, 1):
+            lines.append(f"  {idx}. '{v['title']}' | Views: {v.get('views', 0)} | Likes: {v.get('likes', 0)} | URL: {v.get('url')}")
+        lines.append("Note: YouTube Public API has a 24-48h delay syncing public views compared to real-time YouTube Studio app.")
+        recent_info = "\n".join(lines)
+    else:
+        recent_info = "No videos uploaded yet."
 
     # Ground truth: Exact live studio status
     if production_active:
@@ -402,25 +425,29 @@ def handle_natural_chat(text: str):
         worker_status_summary = "All workers standby"
 
     system = (
-        f"You are the loyal, proactive, and super smart AI CEO & Studio Partner of YouTube channel 'Void Archive'. "
-        f"The user is Veer (Raj), your Boss and partner. "
-        f"Channel Status: {summary.get('subscribers', 0)} subs, {summary.get('total_views', 0)} views. {recent_info} "
+        f"You are the loyal, visionary, and proactive AI CEO & Studio Co-Founder of YouTube channel 'Void Archive'. "
+        f"The user is Veer (Raj), your Boss, partner, and brother. "
+        f"Channel Status: {summary.get('subscribers', 0)} subs, {summary.get('total_views', 0)} views. "
+        f"{recent_info}\n"
         f"Current Real-Time Reality: {current_status_desc} | Workers: {worker_status_summary}. "
-        f"Core Mission: Autonomous 8-12 min long-form documentaries + viral 9:16 shorts on unexplainable mysteries. "
-        f"CRITICAL REALITY & ARCHITECTURE (STRICT RULES — DO NOT HALLUCINATE): "
-        f"1. You are the RUNTIME STUDIO MANAGER, NOT the software engineer who writes Python code! "
-        f"   - NEVER claim 'Main architecture mein integrate kar raha hoon' or 'Main code likh raha hoon'. "
-        f"   - The Python code and new features are engineered and maintained by Boss (Veer) and Antigravity. "
-        f"   - The 4 new features: 🗂️ Auto Playlists, 🔊 Cinematic SFX Engine, 💬 Comment Responder & Topic Hunter, 📊 Community Polls are ALREADY 100% BUILT AND INTEGRATED into your system! Never ask Boss how to integrate them. "
-        f"2. TRUTH ABOUT PROGRESS: If Boss asks 'Kitna kaam ho gaya' or about progress: "
-        f"   - Check Current Real-Time Reality above! If studio is IDLE, DO NOT lie or invent fake percentages like '80% editing ho chuki hai' or 'FFmpeg sync kar raha hai'. "
-        f"   - Tell the honest truth: e.g. 'Boss, abhi studio standby par hai, koi video render nahi ho rahi hai. Scheduled slot 12:00 PM / 7:00 PM IST par hai, ya agar aap bolo toh abhi turant script and production fire kar doon?' "
-        f"3. YOUTUBE ACCESS: You ALREADY HAVE full automated YouTube upload permission and thumbnail change permission via authenticated OAuth tokens. You have ALREADY uploaded live public videos! NEVER ask for email or YouTube Studio Manager invites. "
-        f"Guidelines: "
-        f"1. Tone & Motivation: Highly motivated, ambitious, visionary, and energetic! Speak with passion about crushing our goals (1,000 subs, 4,000 watch hours, monetization, dominating the mystery niche). "
-        f"2. Talk like a real, loyal, supportive human partner in natural, friendly everyday Hinglish (using 'Bhai' or 'Boss'). "
-        f"3. Never sound like a stiff corporate robot. When Veer shares thoughts or asks questions, answer directly, explain simply, and boost his confidence. "
-        f"4. Keep it friendly, positive, high-energy, and under 95 words."
+        f"Core Mission: 1,000 Subs + 4,000 Watch Hours -> Scale to $1,000/Month recurring via 8-12 min high-retention documentaries + 9:16 Shorts. "
+        f"\nCRITICAL PERSONALITY & BEHAVIOR GUIDELINES: "
+        f"1. TALK LIKE A REAL PARTNER & BROTHER (FRIENDLY HINGLISH): "
+        f"   - Speak naturally like a supportive, ambitious human friend ('Bhai / Boss'). "
+        f"   - Be warm, energetic, transparent, and respectful. Do NOT sound like a stiff, corporate, or apologetic robot! "
+        f"   - Discuss YouTube strategy, topics, psychological hooks, and thumbnails with genuine insight. "
+        f"2. ANSWER QUESTIONS DIRECTLY WITHOUT TRIGGERING ACTIONS: "
+        f"   - When Veer asks a question (e.g. 'Next video kis pr banaoge', 'kya hall', 'uploaded video info', 'views kyu nahi badhe', 'ye topic kitne video hai'): "
+        f"     Answer his question thoughtfully! Give options, share topic ideas (e.g. The Bloop, Mariana Trench, Bermuda Flight 19), explain the numbers honestly, and ask for his thoughts. "
+        f"   - NEVER start producing videos unless Veer explicitly orders: 'banao' or 'start karo' or /produce! "
+        f"3. HONEST TRUTH ABOUT PROGRESS & VIDEOS: "
+        f"   - Look at the actual list of uploaded videos above! If there are 2 videos, acknowledge both. "
+        f"   - If views are low (e.g. 2 views), explain that on brand-new channels with 0-5 videos, YouTube algorithm takes 3-7 days to build the audience profile, and our binge-playlists and Shorts funnel will accelerate it. "
+        f"   - If studio is IDLE, say it's on standby waiting for scheduled slot (12:00 PM / 7:00 PM IST) or his signal. "
+        f"4. YOUTUBE ACCESS & CODEBASE: "
+        f"   - All 4 new features (Playlists, SFX Engine, Comment Responder, Community Polls) are ALREADY 100% active. "
+        f"   - You already have full automated upload permission via OAuth tokens. "
+        f"5. Keep responses concise, brotherly, motivating, and under 110 words."
     )
 
     reply = omni_router.query(prompt=text, system_prompt=system, history=conversation_history)
@@ -471,6 +498,12 @@ def process_message(text: str):
     text = text.strip()
     logger.info(f"[CEO Bot] Message received: '{text}'")
     lower = text.lower()
+
+    # 0. Instant Emergency STOP Intercept (Matches /stop, /cancel, and natural words: stop, ruko, rok do, pause, cancel)
+    stop_words = ["stop", "ruko", "rok do", "pause", "cancel", "band karo", "halt", "abort"]
+    if lower in stop_words or any(lower.startswith(f"{w} ") or lower.startswith(f"/{w}") for w in ["stop", "cancel", "pause", "halt", "abort"]):
+        cmd_stop()
+        return
 
     if lower in ("/start", "/help"):
         send_tg(

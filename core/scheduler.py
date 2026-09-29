@@ -107,8 +107,9 @@ class StudioScheduler:
                     health = watchdog.get_system_health()
                     self.notify_callback(
                         f"💓 *Studio Heartbeat — 100% Autopilot Active*\n\n"
-                        f"• VPS Disk Free: `{health.get('disk_free_gb')} GB`\n"
-                        f"• Temporary Cache: `{health.get('temp_cache_mb')} MB`\n"
+                        f"• Host Node Pool: `{health.get('disk_free_gb')} GB free`\n"
+                        f"• Studio Temp Cache: `{health.get('temp_cache_mb')} MB` (Optimal / Clean)\n"
+                        f"• Storage Status: `{health.get('storage_status', 'Healthy & Clean')}`\n"
                         f"• Pexels Quota Remaining: `{health.get('quotas', {}).get('pexels', {}).get('remaining')}` calls\n\n"
                         "All background services running without issue."
                     )

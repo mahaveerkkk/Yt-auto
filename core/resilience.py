@@ -171,17 +171,24 @@ class HealthWatchdog:
 
     def get_system_health(self) -> Dict[str, Any]:
         import shutil
+        import os
         disk = shutil.disk_usage(str(settings.BASE_DIR))
         temp_dir = Path("/tmp/autodirector_production")
+        thumb_dir = Path("/tmp/autodirector_thumbs")
         temp_size_mb = 0.0
-        if temp_dir.exists():
-            temp_size_mb = sum(f.stat().st_size for f in temp_dir.rglob('*') if f.is_file()) / (1024 * 1024)
+        for d in [temp_dir, thumb_dir]:
+            if d.exists():
+                temp_size_mb += sum(f.stat().st_size for f in d.rglob('*') if f.is_file()) / (1024 * 1024)
+
+        is_cloud = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("PORT") or (disk.total / (1024**3) > 100))
 
         return {
             "disk_free_gb": round(disk.free / (1024 ** 3), 2),
             "disk_total_gb": round(disk.total / (1024 ** 3), 2),
             "disk_used_percent": round((disk.used / disk.total) * 100, 1),
             "temp_cache_mb": round(temp_size_mb, 2),
+            "is_cloud": is_cloud,
+            "storage_status": "Healthy & Clean" if temp_size_mb < 200 else "High Temp Usage",
             "quotas": quota_tracker.get_all_status()
         }
 
