@@ -120,14 +120,47 @@ class Uploader:
             return None
 
         title = manifest.get("title", "Untitled Mystery Documentary")
-        description = manifest.get("description", "")
-        tags = [t.replace("#", "").strip() for t in manifest.get("hashtags", ["Mystery", "Documentary"])]
+        raw_desc = manifest.get("description", "").strip()
+        raw_hashtags = manifest.get("hashtags", ["#Mystery", "#Documentary", "#VoidArchive", "#Science"])
+        raw_ai_tags = manifest.get("tags", [])
+        
+        # Format clean hashtags for description text (e.g. #Mystery #DeepSea)
+        formatted_hashtags = []
+        for h in raw_hashtags:
+            clean_word = h.replace("#", "").strip()
+            if clean_word and f"#{clean_word}" not in formatted_hashtags:
+                formatted_hashtags.append(f"#{clean_word}")
+
+        # Combine AI-generated tags (15-25 topic-specific tags) + hashtags + core channel tags for YouTube backend SEO
+        clean_tags = []
+        # 1. AI-generated specific search terms
+        for t in raw_ai_tags:
+            ct = t.replace("#", "").strip()
+            if ct and ct not in clean_tags:
+                clean_tags.append(ct)
+        # 2. Add hashtag words
+        for h in raw_hashtags:
+            cw = h.replace("#", "").strip()
+            if cw and cw not in clean_tags:
+                clean_tags.append(cw)
+        # 3. Channel anchor tags
+        core_channel_tags = ["VoidArchive", "Void Archive", "Documentary", "Mystery", "Unsolved Mystery", "Science Investigation"]
+        for ct in core_channel_tags:
+            if ct not in clean_tags:
+                clean_tags.append(ct)
+
+        # Ensure hashtags are guaranteed at the end of the description text
+        hashtag_line = " ".join(formatted_hashtags)
+        if hashtag_line and hashtag_line not in raw_desc:
+            full_description = f"{raw_desc}\n\n{hashtag_line}\n\n📡 Subscribe to Void Archive for weekly declassified documentaries."
+        else:
+            full_description = raw_desc
 
         body = {
             "snippet": {
                 "title": title[:100],
-                "description": description[:5000],
-                "tags": tags,
+                "description": full_description[:5000],
+                "tags": clean_tags[:30],
                 "categoryId": "28"  # Science & Technology (High CPM)
             },
             "status": {

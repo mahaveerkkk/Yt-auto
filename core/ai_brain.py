@@ -68,9 +68,9 @@ class AIBrain:
         recent_videos = studio_memory.get_recent_videos(limit=10)
         completed_today = sum(1 for v in recent_videos if v.get("uploaded_at", "").startswith(today))
 
-        if completed_today >= 2:
-            worker_manager.complete_task("ai_brain", "Daily upload limit (2/2) reached")
-            return {"allowed": False, "reason": "Target 2 long-form documentary uploads for today already met"}
+        if completed_today >= 1:
+            worker_manager.complete_task("ai_brain", "Daily upload limit (1/1) reached")
+            return {"allowed": False, "reason": "Target 1 high-retention master documentary upload for today already completed"}
 
         worker_manager.complete_task("ai_brain", "Production approved")
         return {"allowed": True, "reason": "All systems healthy. Quotas and schedule clear."}

@@ -142,6 +142,11 @@ Before picking a topic, the CEO scores candidate ideas across 10 parameters:
 ### 18. Related-Video Binge Chaining
 - End-screen cards and pinned comments dynamically link newly published videos to previous catalog entries to create binge-watching spirals.
 
+### 19. Telegram Interactive Art Director & Reference Studio (Boss Mobile Control)
+- **Model Switcher Keyboard:** Quick Telegram inline buttons to pick the AI image engine on demand (`[GPT Image 2.5]`, `[MAI-Image 2.6]`, `[Grok Imagine 2.0]`, `[Gemini Imagen]`, `[Clean FLUX]`).
+- **Reference Image Ingestion:** Boss can send any photo, screenshot, or reference visual directly in Telegram chat; the Art Director extracts its color palette, lighting, and focal layout to generate high-retention variations.
+- **Frictionless Conversational UX:** Intuitive, streamlined mobile chat with the CEO Bot for instant thumbnail iterations and feedback before rendering.
+
 ---
 
 ## 📅 4. Implementation Phasing Strategy

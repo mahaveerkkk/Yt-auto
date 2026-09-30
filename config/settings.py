@@ -26,6 +26,7 @@ class Settings:
     PEXELS_API_KEY: str = os.getenv("PEXELS_API_KEY", "")
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    KIE_API_KEY: str = os.getenv("KIE_API_KEY", "")
 
     # --- LLM Settings ---
     # Primary: qwen/qwen3.8-27b:free (fast & powerful), Fallback: gemini-2.5-flash
@@ -64,10 +65,11 @@ class Settings:
     MUSIC_DIR: Path = ASSETS_DIR / "music"
     SFX_DIR: Path = ASSETS_DIR / "sfx"
     LOGS_DIR: Path = BASE_DIR / "logs"
+    THUMBNAILS_DIR: Path = BASE_DIR / "output" / "thumbnails"
 
     def ensure_directories(self):
-        """Create necessary temporary and output directories in /tmp."""
-        for p in [self.TEMP_DIR, self.PARTS_DIR, self.OUTPUT_DIR, self.LOGS_DIR, self.MUSIC_DIR, self.SFX_DIR]:
+        """Create necessary temporary and output directories."""
+        for p in [self.TEMP_DIR, self.PARTS_DIR, self.OUTPUT_DIR, self.LOGS_DIR, self.MUSIC_DIR, self.SFX_DIR, self.THUMBNAILS_DIR]:
             p.mkdir(parents=True, exist_ok=True)
 
 

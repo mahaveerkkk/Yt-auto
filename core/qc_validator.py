@@ -58,13 +58,64 @@ class QCValidator:
             logger.error(f"FFprobe QC error: {e}")
             return False, f"FFprobe analysis error: {e}"
 
-    def validate_script(self, script_text: str, min_words: int = 950) -> Tuple[bool, str, dict]:
+    def evaluate_hook(self, script_text: str) -> Tuple[int, str]:
+        """
+        Calculates high-retention hook tension score (1-10) for the opening 200 words.
+        Evaluates:
+        1. Forensic & Declassified markers (coordinates, telemetry, declassified, anomaly, etc.)
+        2. Unresolved curiosity loops / burning questions ('?', why, what, how)
+        3. Stakes & Dramatic impact words (impossible, vanished, silenced, forbidden, chilling)
+        4. Fast, punchy opening cadence
+        """
+        words_list = script_text.split()[:200]
+        cold_open = " ".join(words_list).lower()
+        if not cold_open:
+            return 0, "No content in cold open"
+
+        forensic_markers = [
+            "declassified", "anomaly", "coordinates", "telemetry", "sonar", "radar", 
+            "hydrophone", "satellite", "blackout", "incident", "archive", "dossier",
+            "frequency", "recording", "signal", "recovered", "classified", "subsurface"
+        ]
+        stakes_markers = [
+            "impossible", "unexplained", "vanished", "silenced", "forbidden", "terrifying",
+            "chilling", "abyss", "baffled", "perished", "buried", "leaked", "danger"
+        ]
+
+        forensic_hits = sum(1 for m in forensic_markers if m in cold_open)
+        stakes_hits = sum(1 for m in stakes_markers if m in cold_open)
+        question_count = cold_open.count("?")
+
+        score = 5
+        if forensic_hits >= 1:
+            score += 1
+        if forensic_hits >= 3:
+            score += 1
+        if stakes_hits >= 1:
+            score += 1
+        if stakes_hits >= 2:
+            score += 1
+        if question_count >= 1:
+            score += 1
+        if question_count >= 2:
+            score += 1
+
+        # Check punchy opening cadence (first sentence under 20 words)
+        sentences = [s.strip() for s in cold_open.split(".") if s.strip()]
+        if sentences and len(sentences[0].split()) <= 18:
+            score += 1
+
+        final_score = min(10, max(1, score))
+        summary = f"Forensic: {forensic_hits}, Stakes: {stakes_hits}, Questions: {question_count}"
+        return final_score, summary
+
+    def validate_script(self, script_text: str, min_words: int = 950, min_hook_score: int = 9) -> Tuple[bool, str, dict]:
         """
         AI Quality Gate: Evaluates documentary script word count, duration estimate,
-        and narrative retention hooks before audio/video rendering.
+        and enforces minimum 9/10 narrative retention hook before rendering.
         """
         if not script_text or not script_text.strip():
-            return False, "Script is empty.", {"words": 0, "score": 0}
+            return False, "Script is empty.", {"words": 0, "score": 0, "hook_score": 0}
 
         words = len(script_text.split())
         est_duration_min = round(words / 135, 1)
@@ -74,26 +125,28 @@ class QCValidator:
             return False, f"Script length insufficient ({words} words / ~{est_duration_min} mins). Requires {min_words}+ words for mid-roll monetization.", {
                 "words": words,
                 "est_duration_min": est_duration_min,
-                "score": 4
+                "score": 4,
+                "hook_score": 0
             }
 
-        # 2. Hook & Suspense Tone Evaluation (First 250 words)
-        cold_open = " ".join(script_text.split()[:250]).lower()
-        mystery_markers = [
-            "?", "anomaly", "unexplained", "vanished", "secret", "declassified",
-            "abyss", "depths", "strange", "baffled", "impossible", "mysterious", "classified"
-        ]
-        marker_hits = sum(1 for m in mystery_markers if m in cold_open)
-        hook_score = min(10, 5 + marker_hits)
+        # 2. Hook & Suspense Tone Evaluation (Strict 9/10 Standard)
+        hook_score, hook_summary = self.evaluate_hook(script_text)
 
-        if marker_hits < 2:
-            logger.warning(f"[QC] Cold open hook has low mystery tension (score: {hook_score}/10).")
+        if hook_score < min_hook_score:
+            logger.warning(f"[QC] ⚠️ Cold open hook tension ({hook_score}/10) below required {min_hook_score}/10 gate ({hook_summary}).")
+            return False, f"Hook score {hook_score}/10 below {min_hook_score}/10 standard. Polishing required.", {
+                "words": words,
+                "est_duration_min": est_duration_min,
+                "hook_score": hook_score,
+                "hook_summary": hook_summary
+            }
 
-        logger.info(f"✅ Script QC Passed: {words} words (~{est_duration_min} mins), Hook Tension: {hook_score}/10")
+        logger.info(f"✅ Script QC Passed: {words} words (~{est_duration_min} mins), Elite Hook Tension: {hook_score}/10 ({hook_summary})")
         return True, f"Script passed QC: {words} words (~{est_duration_min} mins)", {
             "words": words,
             "est_duration_min": est_duration_min,
-            "hook_score": hook_score
+            "hook_score": hook_score,
+            "hook_summary": hook_summary
         }
 
 

@@ -44,8 +44,10 @@ class ABOptimizer:
             age_hours = (now - uploaded_dt).total_seconds() / 3600.0
             swap_count = v.get("ab_swap_count", 0)
 
-            # Check if video is older than 6 hours and has swapped < 2 times
-            if age_hours >= 6.0 and swap_count < 2:
+            # Algorithmic Safety Guard: Allow full 14 days (336h) for natural YouTube testing.
+            # Only trigger A/B overhaul if video is completely flatlined (< 15 views after 14 days)
+            # and has never been swapped before (swap_count == 0).
+            if age_hours >= 336.0 and swap_count == 0:
                 vid = v.get("video_id")
                 # Fetch fresh views from YouTube API
                 try:
@@ -57,9 +59,9 @@ class ABOptimizer:
                     views = int(stats.get("viewCount", 0))
                     studio_memory.update_stats(vid, views=views, likes=int(stats.get("likeCount", 0)))
 
-                    # If views are low (< 25 after 6 hours), trigger A/B swap!
-                    if views < 25:
-                        logger.info(f"[ABOptimizer] Video '{v.get('title')}' is underperforming ({views} views in {age_hours:.1f}h). Triggering A/B Overhaul...")
+                    # If video is flatlined (< 15 views after 14 full days), trigger single strategic overhaul!
+                    if views < 15:
+                        logger.info(f"[ABOptimizer] Video '{v.get('title')}' is completely flatlined ({views} views in {age_hours/24:.1f} days). Triggering Strategic 14-Day Overhaul...")
                         return self._execute_swap(service, vid, v)
                 except Exception as e:
                     logger.error(f"[ABOptimizer] Error inspecting video {vid}: {e}")
@@ -92,12 +94,11 @@ class ABOptimizer:
         except Exception as e:
             logger.error(f"[ABOptimizer] Failed to update title on YouTube: {e}")
 
-        # 3. Generate and set New High-Contrast Thumbnail
-        new_hook = "SHOCKING TRUTH" if "TRUTH" not in new_title else "DO NOT WATCH"
+        # 3. Generate and set New High-Contrast Thumbnail via Frontier Engine
         new_thumb = thumbnail_designer.generate_thumbnail(
             title=new_title,
-            hook_text=new_hook,
-            visual_prompt=f"extreme mystery anomaly in {category}, high contrast neon glow, terrifying cinematic lighting"
+            hook_text="",
+            visual_prompt=f"classified technical anomaly in {category}, sonar spectrogram waterfall readout, extreme scale perspective contrast, dark atmospheric abyss"
         )
         if new_thumb and new_thumb.exists():
             try:

@@ -300,11 +300,14 @@ try:
 
     # Test 3: /pick A and /pick B
     captured_replies.clear()
+    ceo_bot.waiting_for_thumb_pick = True
     ceo_bot.process_message("/pick A")
     log_test("/pick A Registers Selection", ceo_bot.selected_thumb_choice == "A")
 
+    ceo_bot.waiting_for_thumb_pick = True
     ceo_bot.process_message("/pick B")
     log_test("/pick B Registers Selection", ceo_bot.selected_thumb_choice == "B")
+    ceo_bot.waiting_for_thumb_pick = False
 
     # Restore send_tg
     ceo_bot.send_tg = orig_send_tg

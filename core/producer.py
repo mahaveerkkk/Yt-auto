@@ -172,13 +172,14 @@ class Producer:
                         # Conform to 1280x720, exact scene duration, 30fps, no audio, SAR=1
                         cmd = [
                             "ffmpeg", "-y",
+                            "-threads", "2",
                             "-stream_loop", "-1",
                             "-i", str(raw_stock),
                             "-t", str(duration),
                             "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,setsar=1",
                             "-r", "30",
                             "-an",  # Strip audio track from stock footage to prevent concat audio stream conflicts
-                            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
                             str(target_path)
                         ]
                         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
@@ -218,13 +219,15 @@ class Producer:
         vf = f"{base_pan},setsar=1,vignette=PI/4,eq=contrast=1.08:saturation=1.12,noise=alls=6:allf=t+u"
 
         cmd = [
-            "ffmpeg", "-y", "-loop", "1",
+            "ffmpeg", "-y",
+            "-threads", "2",
+            "-loop", "1",
             "-i", str(img_path),
             "-vf", vf,
             "-t", str(duration),
             "-r", "30",
             "-an",
-            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
             str(out_clip)
         ]
         try:
@@ -249,12 +252,13 @@ class Producer:
             )
             cmd = [
                 "ffmpeg", "-y",
+                "-threads", "2",
                 "-f", "lavfi", "-i", f"color=c=black:s=1280x720:d={duration}:r=30",
                 "-vf", draw_text,
                 "-t", str(duration),
                 "-r", "30",
                 "-an",
-                "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
                 str(target_path)
             ]
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
@@ -305,39 +309,63 @@ class Producer:
         num_scenes = max(len(scenes), 6)
         sec_per_scene = max(5.0, round(voice_duration / num_scenes, 1))
 
-        # 2. Multi-Tier Scene Visuals Generation with Guaranteed Diversity
+        # 2. High-Retention Visual Beats Generation (Dynamic 5-8 Second Cuts)
+        # Instead of 1 long static visual per scene, each scene is broken into dynamic sub-beats
         ready_clips = []
         used_video_ids = set()
+        beat_counter = 1
 
-        for i, sc in enumerate(scenes, start=1):
+        for sc_idx, sc in enumerate(scenes, start=1):
             if cancel_check and cancel_check():
                 logger.info("[Producer] Cancellation detected during scene rendering. Aborting.")
                 worker_manager.report_error("producer", "Production cancelled by user")
                 return None
-            clip_target = self.temp_dir / f"clip_{i}.mp4"
-            img_target = self.temp_dir / f"scene_{i}.jpg"
-            query = sc.get("keywords") or sc.get("prompt") or title
-            seed = i * 333 + random.randint(100, 999)
 
-            logger.info(f"[Producer] Scene {i}/{len(scenes)}: Producing visual ({sec_per_scene}s)...")
+            base_query = sc.get("keywords") or sc.get("prompt") or title
+            scene_prompt = sc.get("prompt") or title
 
-            # Priority 1: High-Definition Pexels Video Clip
-            stock_success = self._download_pexels_clip(query, clip_target, used_video_ids, duration=sec_per_scene)
-            if stock_success:
-                ready_clips.append(clip_target)
-                continue
+            # Calculate how many visual cuts (sub-beats) this scene needs (target 6-8s per cut)
+            target_cut_duration = random.uniform(6.0, 8.5)
+            # If scene duration is long, split into 2-3 visual cuts with different queries
+            cuts_for_scene = max(1, int(round(sec_per_scene / target_cut_duration)))
+            sub_cut_duration = round(sec_per_scene / cuts_for_scene, 2)
 
-            # Priority 2: Hugging Face FLUX.1 Photorealistic Image
-            img_success = self._generate_hf_flux(sc.get("prompt", ""), img_target, seed)
-            if not img_success:
-                img_success = self._generate_pollinations_flux(sc.get("prompt", ""), img_target, seed)
+            logger.info(f"[Producer] Scene {sc_idx}/{len(scenes)} ({sec_per_scene}s): Generating {cuts_for_scene} dynamic visual cuts (~{sub_cut_duration}s each)...")
 
-            if img_success and img_target.exists():
-                motion = "in" if i % 2 == 1 else "pan"
-                self._create_3d_motion(img_target, clip_target, motion_type=motion, duration=sec_per_scene)
-                ready_clips.append(clip_target)
-            elif ready_clips:
-                ready_clips.append(ready_clips[-1])
+            # Extract distinct sub-queries for visual diversity within the same scene
+            sub_queries = [w.strip() for w in base_query.split() if len(w.strip()) > 3]
+            for cut_idx in range(cuts_for_scene):
+                clip_target = self.temp_dir / f"beat_{beat_counter}.mp4"
+                img_target = self.temp_dir / f"beat_img_{beat_counter}.jpg"
+                beat_counter += 1
+
+                # Vary the search term for sub-cuts
+                if cut_idx > 0 and len(sub_queries) > 1:
+                    cut_query = f"{sub_queries[cut_idx % len(sub_queries)]} mystery cinematic"
+                else:
+                    cut_query = base_query
+
+                seed = sc_idx * 500 + cut_idx * 77 + random.randint(100, 999)
+
+                # Priority 1: High-Definition Pexels Video Clip
+                stock_success = self._download_pexels_clip(cut_query, clip_target, used_video_ids, duration=sub_cut_duration)
+                if stock_success:
+                    ready_clips.append(clip_target)
+                    continue
+
+                # Priority 2: Hugging Face FLUX.1 Photorealistic Image
+                img_success = self._generate_hf_flux(scene_prompt, img_target, seed)
+                if not img_success:
+                    img_success = self._generate_pollinations_flux(scene_prompt, img_target, seed)
+
+                if img_success and img_target.exists():
+                    # Alternate motion types for high engagement: zoom-in, zoom-out, pan-tilt
+                    motion_choices = ["in", "out", "pan"]
+                    chosen_motion = motion_choices[(beat_counter + cut_idx) % len(motion_choices)]
+                    self._create_3d_motion(img_target, clip_target, motion_type=chosen_motion, duration=sub_cut_duration)
+                    ready_clips.append(clip_target)
+                elif ready_clips:
+                    ready_clips.append(ready_clips[-1])
 
         if len(ready_clips) < 2:
             logger.error("[Producer] Insufficient visual clips assembled.")
@@ -365,10 +393,11 @@ class Producer:
         # Concat demuxer with re-encoding (robust, low RAM, never hits filtergraph limit)
         cmd_concat = [
             "ffmpeg", "-y",
+            "-threads", "2",
             "-f", "concat",
             "-safe", "0",
             "-i", str(concat_list),
-            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
             str(merged_video)
         ]
         try:
@@ -386,42 +415,80 @@ class Producer:
         # 4. Cinematic Background Music Track
         music_track = self._get_ambient_music_track()
 
-        # 5. Master Documentary Audio & Video Blend
+        # 5. Master Documentary Audio & Video Blend (Dynamic Multi-SFX Tension Mix)
         final_video = self.temp_dir / f"{title_slug}_FINAL.mp4"
         braam_sfx = self.sfx_dir / "sfx_braam.mp3"
         whoosh_sfx = self.sfx_dir / "sfx_whoosh.mp3"
+        riser_sfx = self.sfx_dir / "sfx_riser.mp3"
+        heartbeat_sfx = self.sfx_dir / "sfx_heartbeat.mp3"
 
         base_inputs = [
             "-stream_loop", "-1", "-i", str(merged_video),
             "-i", str(voice_path),
-            "-i", str(music_track)
+            "-stream_loop", "-1", "-i", str(music_track)
         ]
 
-        if braam_sfx.exists() and whoosh_sfx.exists():
-            base_inputs.extend(["-i", str(braam_sfx), "-i", str(whoosh_sfx)])
-            filter_complex = (
-                "[0:v]eq=contrast=1.05:saturation=1.1,"
-                "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
-                "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
-                "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];"
-                "[3:a]adelay=1500|1500,volume=0.22[sfx_b];"
-                "[4:a]adelay=60000|60000,volume=0.20[sfx_w];"
-                "[v][m][sfx_b][sfx_w]amix=inputs=4:duration=first:normalize=0[a_out]"
-            )
-        else:
-            filter_complex = (
-                "[0:v]eq=contrast=1.05:saturation=1.1,"
-                "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
-                "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out];"
-                "[1:a]volume=1.0[v];[2:a]aloop=loop=-1:size=2e+09,volume=0.14[m];[v][m]amix=inputs=2:duration=first:normalize=0[a_out]"
-            )
+        # Multi-layer audio mixing with suspense pacing:
+        # - Braam at 1.5s (Cold Open Hook)
+        # - Whoosh at 45s (Act 1 -> Act 2 transition)
+        # - Riser at 180s (3 min suspense peak)
+        # - Heartbeat at 300s (5 min revelation tension)
+        sfx_inputs = []
+        amix_filters = ["[1:a]volume=1.0[v]", "[2:a]volume=0.13[m]"]
+        input_count = 2
 
-        cmd = ["ffmpeg", "-y"] + base_inputs + [
+        if braam_sfx.exists():
+            base_inputs.extend(["-i", str(braam_sfx)])
+            input_count += 1
+            idx = input_count
+            amix_filters.append(f"[{idx}:a]adelay=1500|1500,volume=0.22[sfx_b]")
+            sfx_inputs.append("[sfx_b]")
+
+        if whoosh_sfx.exists():
+            base_inputs.extend(["-i", str(whoosh_sfx)])
+            input_count += 1
+            idx = input_count
+            amix_filters.append(f"[{idx}:a]adelay=45000|45000,volume=0.18[sfx_w]")
+            sfx_inputs.append("[sfx_w]")
+
+        if riser_sfx.exists():
+            base_inputs.extend(["-i", str(riser_sfx)])
+            input_count += 1
+            idx = input_count
+            amix_filters.append(f"[{idx}:a]adelay=180000|180000,volume=0.18[sfx_r]")
+            sfx_inputs.append("[sfx_r]")
+
+        if heartbeat_sfx.exists():
+            base_inputs.extend(["-i", str(heartbeat_sfx)])
+            input_count += 1
+            idx = input_count
+            amix_filters.append(f"[{idx}:a]adelay=300000|300000,volume=0.20[sfx_h]")
+            sfx_inputs.append("[sfx_h]")
+
+        has_outro = outro_clip.exists()
+        total_video_duration = round(voice_duration + (10.0 if has_outro else 0.0), 1)
+
+        all_amix_sources = "[v][m]" + "".join(sfx_inputs)
+        total_sources = 2 + len(sfx_inputs)
+        fade_start = max(1.0, total_video_duration - 2.5)
+        audio_filter_chain = (
+            ";".join(amix_filters) +
+            f";{all_amix_sources}amix=inputs={total_sources}:duration=longest:normalize=0,afade=t=out:st={fade_start}:d=2.0[a_out]"
+        )
+
+        video_filter = (
+            "[0:v]eq=contrast=1.05:saturation=1.1,"
+            "drawtext=text='VOID ARCHIVE':fontcolor=white@0.45:fontsize=22:x=w-tw-40:y=35:bordercolor=black@0.4:borderw=2,"
+            "drawtext=text='RECORDING \\: CLASSIFIED ARCHIVE':enable='between(t,1.5,7.0)':fontsize=24:fontcolor=white:box=1:boxcolor=black@0.7:boxborderw=8:x=50:y=h-90[v_out]"
+        )
+        filter_complex = f"{video_filter};{audio_filter_chain}"
+
+        cmd = ["ffmpeg", "-y", "-threads", "2"] + base_inputs + [
             "-filter_complex", filter_complex,
             "-map", "[v_out]",
             "-map", "[a_out]",
-            "-t", str(voice_duration),
-            "-c:v", "libx264", "-preset", "fast",
+            "-t", str(total_video_duration),
+            "-c:v", "libx264", "-preset", "veryfast",
             "-c:a", "aac",
             str(final_video)
         ]

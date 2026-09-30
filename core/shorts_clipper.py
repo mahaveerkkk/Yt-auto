@@ -68,6 +68,7 @@ class ShortsClipper:
 
         cmd = [
             "ffmpeg", "-y",
+            "-threads", "2",
             "-ss", "0",
             "-t", str(duration_sec),
             "-i", str(long_video_path),

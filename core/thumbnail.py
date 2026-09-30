@@ -1,104 +1,169 @@
+import os
+import time
+import json
 import requests
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 from config.settings import settings
 from utils.logger import logger
 
 class ThumbnailDesigner:
     """
-    Auto-Thumbnail Designer Agent.
-    Generates high-CTR, high-contrast 1280x720 cover visuals using Pollinations FLUX / HF,
-    adds cinematic dark vignetting and bold yellow intrigue hook text using FFmpeg.
+    Frontier AI Thumbnail Engine (V2).
+    Generates 16:9 ultra-HD, cinematic documentary thumbnails without watermarks.
+    Primary: OpenAI GPT Image 2.5 Flare (via Kie.ai)
+    Secondary: Grok Imagine 2.0 (via Kie.ai)
+    Fallback: Clean HuggingFace FLUX / Cropped FLUX
+    Zero cheap yellow MS-Paint text overlays — native high-CTR technical spectrogram aesthetic.
     """
 
     def __init__(self):
-        self.output_dir = Path("/tmp/autodirector_thumbs")
+        self.output_dir = getattr(settings, "THUMBNAILS_DIR", settings.BASE_DIR / "output" / "thumbnails")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.kie_key = getattr(settings, "KIE_API_KEY", "") or os.getenv("KIE_API_KEY", "")
 
-    def _render_image_pollinations(self, prompt: str, target_path: Path, seed: int = 42) -> bool:
-        """Downloads high-res 1280x720 base image from Pollinations FLUX."""
+    def _render_kie_task(self, model_name: str, prompt: str, target_path: Path, max_wait_sec: int = 70) -> bool:
+        """Asynchronously dispatches image generation to Kie.ai and downloads HD result."""
+        if not self.kie_key:
+            return False
+
+        headers = {
+            "Authorization": f"Bearer {self.kie_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model_name,
+            "input": {
+                "prompt": prompt,
+                "aspect_ratio": "16:9"
+            }
+        }
+
         try:
-            clean_p = requests.utils.quote(prompt)
-            url = f"https://image.pollinations.ai/prompt/{clean_p}?width=1280&height=720&model=flux&nologo=true&seed={seed}"
-            res = requests.get(url, timeout=12)
-            if res.status_code == 200 and len(res.content) > 10000:
-                with open(target_path, "wb") as f:
-                    f.write(res.content)
-                return True
+            logger.info(f"[Thumbnail] Submitting generation task to Kie.ai ({model_name})...")
+            create_res = requests.post("https://api.kie.ai/api/v1/jobs/createTask", json=payload, headers=headers, timeout=20)
+            if create_res.status_code != 200:
+                logger.warning(f"[Thumbnail] Kie.ai task submission returned status {create_res.status_code}: {create_res.text[:150]}")
+                return False
+
+            data = create_res.json()
+            task_id = data.get("data", {}).get("taskId")
+            if not task_id:
+                logger.warning(f"[Thumbnail] No taskId in Kie.ai response: {data}")
+                return False
+
+            logger.info(f"[Thumbnail] Task {task_id} queued on {model_name}. Polling status...")
+            start_t = time.time()
+            while time.time() - start_t < max_wait_sec:
+                time.sleep(4)
+                try:
+                    status_res = requests.get(f"https://api.kie.ai/api/v1/jobs/recordInfo?taskId={task_id}", headers=headers, timeout=25)
+                    if status_res.status_code != 200:
+                        continue
+                    sdata = status_res.json().get("data", {})
+                    state = sdata.get("state")
+                    if state == "success":
+                        result_urls = sdata.get("response", {}).get("resultUrls") or []
+                        if not result_urls and "resultJson" in sdata:
+                            try:
+                                result_urls = json.loads(sdata["resultJson"]).get("resultUrls", [])
+                            except Exception:
+                                pass
+                        if result_urls:
+                            img_bytes = requests.get(result_urls[0], timeout=35).content
+                            with open(target_path, "wb") as f:
+                                f.write(img_bytes)
+                            logger.info(f"✅ [Thumbnail] High-Res Thumbnail saved ({model_name}): {target_path} ({len(img_bytes)} bytes)")
+                            return True
+                        break
+                    elif state in ["fail", "error"]:
+                        logger.warning(f"[Thumbnail] Task failed on {model_name}: {sdata.get('failMsg')}")
+                        break
+                except (requests.RequestException, Exception) as poll_err:
+                    logger.debug(f"[Thumbnail] Polling retry on transient error: {poll_err}")
+                    continue
         except Exception as e:
-            logger.warning(f"[Thumbnail] Pollinations generation error: {e}")
+            logger.warning(f"[Thumbnail] Kie.ai exception for {model_name}: {e}")
         return False
 
-    def generate_dual_thumbnails(self, title: str, hook_text: str, visual_prompt: str, category: str = "Mystery") -> dict:
+    def _render_image_pollinations_clean(self, prompt: str, target_path: Path, seed: int = 42) -> bool:
+        """Downloads base image from Pollinations and crops any bottom-corner watermark."""
+        try:
+            clean_p = requests.utils.quote(prompt)
+            url = f"https://image.pollinations.ai/prompt/{clean_p}?width=1280&height=740&model=flux&nologo=true&seed={seed}"
+            res = requests.get(url, timeout=15)
+            if res.status_code == 200 and len(res.content) > 10000:
+                raw_temp = target_path.with_suffix(".tmp.jpg")
+                with open(raw_temp, "wb") as f:
+                    f.write(res.content)
+                # Crop bottom 20px using FFmpeg to eliminate any watermark
+                try:
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", str(raw_temp), "-vf", "crop=1280:720:0:0", str(target_path)],
+                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+                    if raw_temp.exists():
+                        raw_temp.unlink()
+                    return True
+                except Exception:
+                    raw_temp.rename(target_path)
+                    return True
+        except Exception as e:
+            logger.warning(f"[Thumbnail] Clean Pollinations error: {e}")
+        return False
+
+    def generate_dual_thumbnails(self, title: str, hook_text: str, visual_prompt: str, category: str = "Mystery") -> Dict[str, Optional[Path]]:
         """
-        Creates 2 distinct high-CTR thumbnail styles for Boss to pick:
-        - Option A: Macro Close-up Intrigue with bold yellow impact text.
-        - Option B: Cinematic Scale & Dread with classified red banner and bold white text.
+        Creates 2 distinct high-CTR, 16:9 documentary thumbnails:
+        - Option A: GPT Image 2.5 Flare (Technical Spectrogram, Depth HUD, Split-view scale)
+        - Option B: Grok Imagine 2.0 (Atmospheric Dread, Deep Abyss Lighting, High Contrast)
         Returns {'thumb_a': Path, 'thumb_b': Path}.
         """
-        raw_a = self.output_dir / "raw_thumb_a.jpg"
-        raw_b = self.output_dir / "raw_thumb_b.jpg"
-        final_a = self.output_dir / "thumb_option_a.jpg"
-        final_b = self.output_dir / "thumb_option_b.jpg"
+        timestamp = int(time.time())
+        clean_slug = "".join(c for c in title if c.isalnum() or c in (" ", "_", "-")).rstrip().replace(" ", "_")[:30]
+        final_a = self.output_dir / f"thumb_{clean_slug}_A_{timestamp}.jpg"
+        final_b = self.output_dir / f"thumb_{clean_slug}_B_{timestamp}.jpg"
 
-        clean_hook = hook_text.upper().replace("'", "").replace(":", "")[:22]
-        if not clean_hook:
-            clean_hook = "CLASSIFIED"
+        logger.info(f"[Thumbnail] Generating Frontier Dual Thumbnails for '{title}'...")
 
-        logger.info(f"[Thumbnail] Generating Dual Thumbnails (Option A & B) for '{title}'...")
+        # Option A Prompt: Technical documentary, acoustic spectrogram HUD, split cross-section
+        prompt_a = (
+            f"A cinematic National Geographic documentary photograph, topic '{title}'. "
+            f"{visual_prompt}. Split cross-section perspective showing dramatic scale contrast. "
+            f"Technical acoustic audio spectrogram waterfall display in top corner, scientific digital depth HUD telemetry, "
+            f"ultra-sharp focal point, dramatic rim lighting, 16:9 widescreen, hyperrealistic, zero cheap text."
+        )
 
-        # Option A: Close-Up Intrigue
-        prompt_a = f"{visual_prompt}, extreme macro closeup, glowing bioluminescent relic, intense dramatic lighting, 8k cinematic mystery, vivid contrast"
-        success_a = self._render_image_pollinations(prompt_a, raw_a, seed=777)
+        # Option B Prompt: Dark atmospheric scale, deep abyss dread, glowing anomaly
+        prompt_b = (
+            f"An unsettling BBC documentary cinematic visual, topic '{title}'. "
+            f"{visual_prompt}. Wide panoramic scale of vast cosmic or oceanic abyss, intense red emergency lighting contrast, "
+            f"massive colossal silhouette towering over tiny human research element, foggy atmospheric haze, 16:9, hyperrealistic 4K."
+        )
+
+        # Try Tier 1: GPT Image 2.5 Flare for Option A
+        success_a = self._render_kie_task("gpt-image-2-5-flare-text-to-image", prompt_a, final_a)
         if not success_a:
-            # Fallback to local scene frame if available
-            scene_1_jpg = Path("/tmp/autodirector_production/scene_1.jpg")
-            if scene_1_jpg.exists():
-                import shutil
-                shutil.copy(scene_1_jpg, raw_a)
+            logger.info("[Thumbnail] Falling back Option A to Grok Imagine 2.0...")
+            success_a = self._render_kie_task("grok-imagine/text-to-image", prompt_a, final_a)
+        if not success_a:
+            logger.info("[Thumbnail] Falling back Option A to Clean FLUX...")
+            success_a = self._render_image_pollinations_clean(prompt_a, final_a, seed=777)
 
-        # Option B: Atmospheric Scale & Dread
-        prompt_b = f"{visual_prompt}, wide angle panoramic view, immense cosmic dread, stormy ocean abyss, deep dark atmospheric mist, red emergency glow, 8k"
-        success_b = self._render_image_pollinations(prompt_b, raw_b, seed=999)
-        if not success_b and raw_a.exists():
-            import shutil
-            shutil.copy(raw_a, raw_b)
-
-        # Render Final A (Bold Yellow Text + Vignette)
-        if raw_a.exists():
-            vf_a = (
-                f"eq=contrast=1.2:saturation=1.25,vignette=PI/4,"
-                f"drawtext=text='{clean_hook}':fontcolor=yellow:fontsize=68:x=(w-text_w)/2:y=h-130:"
-                f"bordercolor=black:borderw=6:shadowcolor=black@0.9:shadowx=4:shadowy=4"
-            )
-            try:
-                subprocess.run(["ffmpeg", "-y", "-i", str(raw_a), "-vf", vf_a, str(final_a)],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
-            except subprocess.CalledProcessError as e:
-                logger.error(f"[Thumbnail] FFmpeg Option A failed: {e.stderr[:300] if e.stderr else e}")
-
-        # Render Final B (Red Classified Badge + Bold White Text)
-        if raw_b.exists():
-            vf_b = (
-                f"eq=contrast=1.15:saturation=1.1,vignette=PI/3,"
-                f"drawtext=text='[ CLASSIFIED DOSSIER ]':fontcolor=red:fontsize=32:x=60:y=60:bordercolor=black:borderw=4,"
-                f"drawtext=text='{clean_hook}':fontcolor=white:fontsize=64:x=(w-text_w)/2:y=h-130:"
-                f"bordercolor=black:borderw=6:shadowcolor=red@0.5:shadowx=3:shadowy=3"
-            )
-            try:
-                subprocess.run(["ffmpeg", "-y", "-i", str(raw_b), "-vf", vf_b, str(final_b)],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
-            except subprocess.CalledProcessError as e:
-                logger.error(f"[Thumbnail] FFmpeg Option B failed: {e.stderr[:300] if e.stderr else e}")
+        # Try Tier 2: Grok Imagine 2.0 for Option B
+        success_b = self._render_kie_task("grok-imagine/text-to-image", prompt_b, final_b)
+        if not success_b:
+            logger.info("[Thumbnail] Falling back Option B to Clean FLUX...")
+            success_b = self._render_image_pollinations_clean(prompt_b, final_b, seed=999)
 
         return {
-            "thumb_a": final_a if final_a.exists() else None,
-            "thumb_b": final_b if final_b.exists() else None  # Don't fake B with A — let A/B optimizer know B failed
+            "thumb_a": final_a if (final_a.exists() and final_a.stat().st_size > 5000) else None,
+            "thumb_b": final_b if (final_b.exists() and final_b.stat().st_size > 5000) else None
         }
 
     def generate_thumbnail(self, title: str, hook_text: str, visual_prompt: str) -> Optional[Path]:
-        """Backwards compatible single-thumbnail generator (returns Option A)."""
+        """Backwards compatible single-thumbnail generator (returns best available option)."""
         res = self.generate_dual_thumbnails(title, hook_text, visual_prompt)
         return res.get("thumb_a") or res.get("thumb_b")
 

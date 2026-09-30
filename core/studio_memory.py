@@ -200,6 +200,17 @@ class StudioMemory:
             logger.error(f"[StudioMemory] Fetch error: {e}")
             return []
 
+    def get_recent_videos(self, limit: int = 10) -> List[Dict[str, Any]]:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM videos ORDER BY id DESC LIMIT ?", (limit,))
+                return [dict(r) for r in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[StudioMemory] Fetch recent error: {e}")
+            return []
+
     def update_stats(self, video_id: str, views: int, likes: int):
         try:
             with sqlite3.connect(self.db_path) as conn:
