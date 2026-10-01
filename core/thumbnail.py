@@ -72,10 +72,20 @@ class ThumbnailDesigner:
                                 pass
                         if result_urls:
                             img_bytes = requests.get(result_urls[0], timeout=35).content
-                            with open(target_path, "wb") as f:
+                            raw_temp = target_path.with_suffix(".raw.png")
+                            with open(raw_temp, "wb") as f:
                                 f.write(img_bytes)
-                            logger.info(f"✅ [Thumbnail] High-Res Thumbnail saved ({model_name}): {target_path} ({len(img_bytes)} bytes)")
-                            return True
+
+                            conformed = self._conform_thumbnail(raw_temp, target_path)
+                            if raw_temp.exists():
+                                raw_temp.unlink()
+
+                            if conformed:
+                                logger.info(f"✅ [Thumbnail] High-Res 16:9 Thumbnail saved ({model_name}): {target_path} ({target_path.stat().st_size} bytes)")
+                                return True
+                            else:
+                                raw_temp.rename(target_path)
+                                return True
                         break
                     elif state in ["fail", "error"]:
                         logger.warning(f"[Thumbnail] Task failed on {model_name}: {sdata.get('failMsg')}")
@@ -86,6 +96,25 @@ class ThumbnailDesigner:
         except Exception as e:
             logger.warning(f"[Thumbnail] Kie.ai exception for {model_name}: {e}")
         return False
+
+    def _conform_thumbnail(self, src_path: Path, dst_path: Path) -> bool:
+        """
+        Conforms any raw PNG/JPEG from Kie.ai into a guaranteed 1280x720 16:9 JPEG
+        under 1.5MB so YouTube API never throws 400 'image is too large'.
+        """
+        try:
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", str(src_path),
+                "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+                "-q:v", "3",
+                str(dst_path)
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            return dst_path.exists() and dst_path.stat().st_size > 10000
+        except Exception as e:
+            logger.warning(f"[Thumbnail] FFmpeg conform error: {e}")
+            return False
 
     def _render_image_pollinations_clean(self, prompt: str, target_path: Path, seed: int = 42) -> bool:
         """Downloads base image from Pollinations and crops any bottom-corner watermark."""

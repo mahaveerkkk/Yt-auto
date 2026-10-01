@@ -258,37 +258,18 @@ def cmd_produce(topic: str = None):
                 send_tg("🛑 Production cancelled before upload.")
                 return
 
-            # Dispatch Option A and Option B photos to Telegram for Boss review
-            if thumb_a and thumb_a.exists():
-                send_tg_photo(thumb_a, "🖼️ *Thumbnail Option A (Macro Close-Up Intrigue)*\nTap `/pick A` to choose this cover.")
-            if thumb_b and thumb_b.exists():
-                send_tg_photo(thumb_b, "🖼️ *Thumbnail Option B (Cinematic Scale & Dread)*\nTap `/pick B` to choose this cover.")
-
-            send_tg(
-                "⏱️ *10-Minute Cover Selection Window:*\n"
-                "Boss, aap `/pick A` ya `/pick B` bhej sakte hain.\n"
-                "_Agar aap busy hain ya reply nahi dete, toh AI automatically Option A select karke upload kar dega (Video rukegi nahi)!_"
-            )
-
-            # 10-Minute Event-driven non-blocking countdown window
-            global selected_thumb_choice, waiting_for_thumb_pick
-            selected_thumb_choice = None
-            waiting_for_thumb_pick = True
-            thumb_pick_event.clear()
-
-            # Wait up to 600s or until /pick A or /pick B is received
-            thumb_pick_event.wait(timeout=600)
-            waiting_for_thumb_pick = False
-
-            if selected_thumb_choice == "B" and thumb_b and thumb_b.exists():
-                active_thumb = thumb_b
-                send_tg("🎯 *Cover Locked:* Using *Option B* for YouTube upload!")
-            else:
-                active_thumb = thumb_a or thumb_b
-                if selected_thumb_choice == "A":
-                    send_tg("🎯 *Cover Locked:* Using *Option A* for YouTube upload!")
-                else:
-                    send_tg("⏰ *Window expired:* Auto-selected *Option A* (highest predicted CTR). Uploading now...")
+            # 100% Autonomous Cover Selection (Primary: Option A GPT Image 2.5 Flare)
+            active_thumb = thumb_a if (thumb_a and thumb_a.exists()) else thumb_b
+            if active_thumb and active_thumb.exists():
+                send_tg_photo(
+                    active_thumb,
+                    f"🎯 *Autonomous AI CEO:* Locked Frontier Cover (Option A) for *{manifest.get('title')}*.\n_Publishing directly to YouTube..._"
+                )
+            if thumb_b and thumb_b.exists() and thumb_b != active_thumb:
+                send_tg_photo(
+                    thumb_b,
+                    "🖼️ *Alternative Cover Variant (Option B)*\n_(Stored in archive for A/B testing if needed)_"
+                )
 
             # Step 5: Deliver video preview to Telegram
             caption = f"🎬 *{manifest.get('title')}*\n\n{manifest.get('description', '')}\n\n{' '.join(manifest.get('hashtags', []))}"

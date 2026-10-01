@@ -200,8 +200,26 @@ class Uploader:
             # Auto-Set Custom Thumbnail if provided
             if thumbnail_path and Path(thumbnail_path).exists():
                 try:
-                    logger.info(f"[YouTube] Uploading custom thumbnail for video {video_id}...")
-                    thumb_media = MediaFileUpload(str(thumbnail_path), mimetype="image/jpeg")
+                    th_file = Path(thumbnail_path)
+                    upload_target = th_file
+
+                    # YouTube strictly limits custom thumbnails to 2MB (2,097,152 bytes)
+                    if th_file.stat().st_size >= 1950000:
+                        logger.info(f"[YouTube] Thumbnail size ({th_file.stat().st_size / (1024*1024):.2f}MB) exceeds 1.95MB safe limit. Recompressing...")
+                        recompressed = th_file.with_name(f"{th_file.stem}_safe.jpg")
+                        cmd = [
+                            "ffmpeg", "-y",
+                            "-i", str(th_file),
+                            "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+                            "-q:v", "3",
+                            str(recompressed)
+                        ]
+                        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                        if recompressed.exists() and recompressed.stat().st_size < 1950000:
+                            upload_target = recompressed
+
+                    logger.info(f"[YouTube] Uploading custom thumbnail ({upload_target.stat().st_size / 1024:.1f} KB) for video {video_id}...")
+                    thumb_media = MediaFileUpload(str(upload_target), mimetype="image/jpeg")
                     youtube.thumbnails().set(videoId=video_id, media_body=thumb_media).execute()
                     logger.info("🎉 Custom Thumbnail successfully set on YouTube!")
                 except Exception as th_err:
