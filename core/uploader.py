@@ -95,7 +95,7 @@ class Uploader:
             return None
 
         try:
-            creds = Credentials.from_authorized_user_file(str(self.token_file), YOUTUBE_SCOPES)
+            creds = Credentials.from_authorized_user_file(str(self.token_file))
             if creds and not creds.valid and creds.refresh_token:
                 logger.info("[YouTube] Refreshing expired OAuth token...")
                 creds.refresh(Request())
