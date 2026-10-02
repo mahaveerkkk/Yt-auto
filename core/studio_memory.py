@@ -179,7 +179,7 @@ class StudioMemory:
     # ---------------- Video Records ----------------
     def record_upload(self, video_id: str, title: str, category: str, youtube_url: str, thumb_path: str = ""):
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT OR REPLACE INTO videos 
@@ -199,7 +199,7 @@ class StudioMemory:
 
     def get_all_videos(self) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM videos ORDER BY id DESC")
@@ -210,7 +210,7 @@ class StudioMemory:
 
     def get_recent_videos(self, limit: int = 10) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM videos ORDER BY id DESC LIMIT ?", (limit,))
@@ -221,7 +221,7 @@ class StudioMemory:
 
     def update_stats(self, video_id: str, views: int, likes: int):
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE videos 
@@ -235,7 +235,7 @@ class StudioMemory:
     def record_ab_swap(self, video_id: str, new_title: str):
         """Records an A/B test title overhaul and increments ab_swap_count."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE videos 
@@ -250,7 +250,7 @@ class StudioMemory:
     def log_strategy_decision(self, decision_type: str, old_value: str, new_value: str, reason: str, data_snapshot: Optional[Dict] = None):
         try:
             snapshot_str = json.dumps(data_snapshot or {})
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute("""
                     INSERT INTO strategy_decisions (decision_type, old_value, new_value, reason, data_snapshot)
                     VALUES (?, ?, ?, ?, ?)
@@ -262,7 +262,7 @@ class StudioMemory:
 
     def get_recent_strategy_decisions(self, limit: int = 5) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM strategy_decisions ORDER BY id DESC LIMIT ?", (limit,))
@@ -275,7 +275,7 @@ class StudioMemory:
     def update_worker_status(self, worker_name: str, status: str, current_task: str = "", error_msg: str = ""):
         now = datetime.utcnow()
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT success_count, error_count, total_tasks FROM worker_status WHERE worker_name = ?", (worker_name,))
                 row = cursor.fetchone()
@@ -305,7 +305,7 @@ class StudioMemory:
 
     def get_worker_status(self, worker_name: Optional[str] = None) -> Any:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 if worker_name:
@@ -321,7 +321,7 @@ class StudioMemory:
     # ---------------- Niche & Category Analytics ----------------
     def get_category_performance(self) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -343,7 +343,7 @@ class StudioMemory:
     # ---------------- Calendar ----------------
     def add_to_calendar(self, planned_date: str, planned_time: str, topic: str, category: str, target_duration: int = 600):
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute("""
                     INSERT INTO content_calendar (planned_date, planned_time, topic, category, target_duration_sec)
                     VALUES (?, ?, ?, ?, ?)
@@ -389,7 +389,7 @@ class StudioMemory:
     # ---------------- Playlists ----------------
     def save_playlist(self, playlist_id: str, title: str, category: str, youtube_url: str = "", video_count: int = 0):
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute("""
                     INSERT INTO playlists (playlist_id, title, category, youtube_url, video_count)
                     VALUES (?, ?, ?, ?, ?)
@@ -401,7 +401,7 @@ class StudioMemory:
 
     def get_playlists(self) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM playlists ORDER BY video_count DESC")
@@ -412,7 +412,7 @@ class StudioMemory:
 
     def get_playlist_by_category(self, category: str) -> Optional[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM playlists WHERE category LIKE ? LIMIT 1", (f"%{category}%",))
@@ -424,7 +424,7 @@ class StudioMemory:
 
     def increment_playlist_count(self, playlist_id: str):
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute("UPDATE playlists SET video_count = video_count + 1 WHERE playlist_id = ?", (playlist_id,))
                 conn.commit()
         except Exception as e:
@@ -434,7 +434,7 @@ class StudioMemory:
     def save_viewer_comment(self, comment_id: str, video_id: str, author: str, text: str,
                             is_topic_suggestion: int = 0, extracted_topic: str = "", reply_text: str = "", replied: int = 0):
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute("""
                     INSERT OR IGNORE INTO viewer_comments (comment_id, video_id, author, text, is_topic_suggestion, extracted_topic, reply_text, replied)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -446,7 +446,7 @@ class StudioMemory:
     def mark_comment_replied(self, comment_id: str):
         """Mark a viewer comment as replied in the database."""
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute(
                     "UPDATE viewer_comments SET replied = 1 WHERE comment_id = ?",
                     (comment_id,)
@@ -468,7 +468,7 @@ class StudioMemory:
 
     def get_suggested_topics(self, limit: int = 10) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM viewer_comments WHERE is_topic_suggestion = 1 ORDER BY created_at DESC LIMIT ?", (limit,))
@@ -479,7 +479,7 @@ class StudioMemory:
 
     def get_recent_comments(self, limit: int = 15) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM viewer_comments ORDER BY created_at DESC LIMIT ?", (limit,))
@@ -492,7 +492,7 @@ class StudioMemory:
     def record_tech_discovery(self, tool_name: str, category: str, source_url: str,
                               description: str, potential_benefit: str) -> bool:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.cursor().execute("""
                     INSERT OR REPLACE INTO tech_discoveries (tool_name, category, source_url, description, potential_benefit, discovered_at)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -505,7 +505,7 @@ class StudioMemory:
 
     def get_tech_discoveries(self, limit: int = 6) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM tech_discoveries ORDER BY discovered_at DESC LIMIT ?", (limit,))

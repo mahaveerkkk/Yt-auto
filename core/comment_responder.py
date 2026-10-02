@@ -209,5 +209,9 @@ class CommentResponder:
 
         return "\n".join(lines)
 
+    def format_comment_summary(self, limit: int = 3) -> str:
+        """Alias for format_comments_telegram_summary with limit support."""
+        return self.format_comments_telegram_summary()
+
 
 comment_responder = CommentResponder()

@@ -205,7 +205,18 @@ class Scout:
         except Exception as e:
             logger.warning(f"[Scout] Viral title polishing skipped: {e}")
 
-        return raw_candidate
+        # Local heuristic mystery hook polishing if cloud models unreachable
+        clean_raw = raw_topic.strip().rstrip(".")
+        if not clean_raw.lower().startswith(("the ", "why ", "what ", "inside ")):
+            fallback_title = f"The Classified Mystery of {clean_raw}"
+        else:
+            fallback_title = f"{clean_raw}: Unexplained Files"
+        return {
+            "category": category,
+            "topic": fallback_title[:65],
+            "angle": raw_angle or f"Declassified investigation into {clean_raw}.",
+            "keywords": raw_candidate.get("keywords") or [category, "Mystery", "Declassified", "Anomaly"]
+        }
 
     def pick_next_viral_topic(self, user_override: Optional[str] = None) -> Dict[str, Any]:
         """Chooses the next high-retention viral topic with zero repetition and Gemini hook polishing."""

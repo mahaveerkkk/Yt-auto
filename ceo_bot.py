@@ -44,6 +44,8 @@ API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 # Global production states
 production_active = False
 production_cancel_requested = False
+production_lock = threading.Lock()
+history_lock = threading.Lock()
 selected_thumb_choice = None
 thumb_pick_event = threading.Event()
 waiting_for_thumb_pick = False
@@ -184,18 +186,19 @@ def cmd_produce(topic: str = None):
     """Full autonomous 8-12 minute documentary production pipeline."""
     global production_active, production_cancel_requested, active_production_topic, last_production_error, last_production_topic
 
-    if production_active:
-        send_tg("⚠️ Ek video pehle se ban rahi hai! `/stop` se cancel karo ya wait karo.")
-        return
+    with production_lock:
+        if production_active:
+            send_tg("⚠️ Ek video pehle se ban rahi hai! `/stop` se cancel karo ya wait karo.")
+            return
 
-    production_active = True
-    production_cancel_requested = False
-    active_production_topic = topic or "Scouting Topic..."
-    last_production_topic = active_production_topic
-    last_production_error = None
+        production_active = True
+        production_cancel_requested = False
+        active_production_topic = topic or "Scouting Topic..."
+        last_production_topic = active_production_topic
+        last_production_error = None
 
     def _production_task():
-        global production_active, production_cancel_requested, active_production_topic, last_production_error, last_production_topic
+        global production_active, production_cancel_requested, active_production_topic, last_production_error, last_production_topic, waiting_for_thumb_pick, selected_thumb_choice
         try:
             # Step 1: Scout Topic
             if production_cancel_requested:
@@ -261,18 +264,37 @@ def cmd_produce(topic: str = None):
                 send_tg("🛑 Production cancelled before upload.")
                 return
 
-            # 100% Autonomous Cover Selection (Primary: Option A GPT Image 2.5 Flare)
-            active_thumb = thumb_a if (thumb_a and thumb_a.exists()) else thumb_b
-            if active_thumb and active_thumb.exists():
+            # Dual Thumbnail Selection: Autonomous with 45s Manual Pick Window
+            selected_thumb_choice = None
+            waiting_for_thumb_pick = True
+            thumb_pick_event.clear()
+
+            if thumb_a and thumb_a.exists():
                 send_tg_photo(
-                    active_thumb,
-                    f"🎯 *Autonomous AI CEO:* Locked Frontier Cover (Option A) for *{manifest.get('title')}*.\n_Publishing directly to YouTube..._"
+                    thumb_a,
+                    f"🖼️ *Option A (Frontier Flare/Tech):* `{manifest.get('title')}`"
                 )
-            if thumb_b and thumb_b.exists() and thumb_b != active_thumb:
+            if thumb_b and thumb_b.exists():
                 send_tg_photo(
                     thumb_b,
-                    "🖼️ *Alternative Cover Variant (Option B)*\n_(Stored in archive for A/B testing if needed)_"
+                    f"🖼️ *Option B (Atmospheric Dread):* `{manifest.get('title')}`"
                 )
+
+            send_tg(
+                "⏱️ *Thumbnail Decision Window (45s):*\n"
+                "• Send `/pick A` for Option A\n"
+                "• Send `/pick B` for Option B\n\n"
+                "_Auto-locking Option A in 45 seconds if no manual pick received..._"
+            )
+            thumb_pick_event.wait(timeout=45.0)
+            waiting_for_thumb_pick = False
+
+            if selected_thumb_choice == "B" and (thumb_b and thumb_b.exists()):
+                active_thumb = thumb_b
+                send_tg("🎯 *Cover Selection:* Option B chosen by Boss! Uploading to YouTube...")
+            else:
+                active_thumb = thumb_a if (thumb_a and thumb_a.exists()) else thumb_b
+                send_tg(f"🎯 *Cover Selection:* Option {'A' if active_thumb == thumb_a else 'B'} locked. Uploading to YouTube...")
 
             # Step 5: Deliver video preview to Telegram
             caption = f"🎬 *{manifest.get('title')}*\n\n{manifest.get('description', '')}\n\n{' '.join(manifest.get('hashtags', []))}"
@@ -360,9 +382,11 @@ def cmd_produce(topic: str = None):
             worker_manager.report_error("producer", str(e)[:150])
             send_tg(f"❌ *Production Issue Encountered:* {str(e)[:180]}")
         finally:
-            production_active = False
-            production_cancel_requested = False
-            active_production_topic = None
+            with production_lock:
+                production_active = False
+                production_cancel_requested = False
+                active_production_topic = None
+            waiting_for_thumb_pick = False
             # Reset any worker stuck in working state
             for w in ("scout", "director", "producer", "thumbnail", "uploader"):
                 st = worker_manager.get_status_overview().get(w, {})
@@ -465,10 +489,11 @@ def handle_natural_chat(text: str):
 
     # Send Gemini's natural conversational response to Boss
     send_tg(f"👑 *CEO:*\n{clean[:800]}")
-    conversation_history.append({"role": "user", "content": text})
-    conversation_history.append({"role": "assistant", "content": clean})
-    if len(conversation_history) > 16:
-        conversation_history = conversation_history[-16:]
+    with history_lock:
+        conversation_history.append({"role": "user", "content": text})
+        conversation_history.append({"role": "assistant", "content": clean})
+        if len(conversation_history) > 16:
+            conversation_history = conversation_history[-16:]
 
     # Execute Action
     if action == "PRODUCE":
@@ -482,15 +507,16 @@ def handle_natural_chat(text: str):
 def cmd_short():
     """Generates an instant standalone viral Short."""
     global production_active
-    if production_active:
-        send_tg("⚠️ *Studio Busy:* Abhi already ek video produce ho rahi hai. Please wait...")
-        return
+    with production_lock:
+        if production_active:
+            send_tg("⚠️ *Studio Busy:* Abhi already ek video produce ho rahi hai. Please wait...")
+            return
+        production_active = True
 
     send_tg("⚡ *Viral Short Production Initiated!* Generating cinematic vertical hook & sound design...")
 
     def _short_task():
         global production_active
-        production_active = True
         try:
             from make_viral_short import main as run_viral_short
             run_viral_short()
@@ -499,7 +525,8 @@ def cmd_short():
             logger.error(f"[Shorts Error]: {e}", exc_info=True)
             send_tg(f"❌ *Shorts Production Failed:* {str(e)[:150]}")
         finally:
-            production_active = False
+            with production_lock:
+                production_active = False
 
     threading.Thread(target=_short_task, daemon=True).start()
 

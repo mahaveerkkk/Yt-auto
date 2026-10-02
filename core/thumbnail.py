@@ -143,6 +143,45 @@ class ThumbnailDesigner:
             logger.warning(f"[Thumbnail] Clean Pollinations error: {e}")
         return False
 
+    def _render_local_fallback(self, title: str, hook_text: str, dst_path: Path, style: str = "a") -> bool:
+        """
+        Guaranteed zero-network local fallback thumbnail using FFmpeg lavfi filters.
+        Produces a crisp 1280x720 16:9 thumbnail with dark mystery gradients, vignette,
+        and high-contrast typography even if all external APIs and DNS are unreachable.
+        """
+        try:
+            if style == "b":
+                bg_color = "0x0b0406"
+                border_color = "0xe11d48@0.6"
+                vignette = "PI/3"
+            else:
+                bg_color = "0x040914"
+                border_color = "0x38bdf8@0.6"
+                vignette = "PI/4"
+
+            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            font_filter = f":fontfile='{font_path}'" if Path(font_path).exists() else ""
+            clean_title = "".join(c for c in title if c.isalnum() or c in (" ", "-", ":", "?", "!"))[:38].replace("'", "")
+            clean_hook = "".join(c for c in hook_text if c.isalnum() or c in (" ", "-", ":", "?", "!"))[:40].replace("'", "")
+
+            vf = (
+                f"color=c={bg_color}:s=1280x720:d=1,"
+                f"drawbox=x=40:y=40:w=1200:h=640:color=0x000000@0.7:t=fill,"
+                f"drawbox=x=40:y=40:w=1200:h=640:color={border_color}:t=4,"
+                f"drawtext=text='{clean_title}'{font_filter}:fontsize=46:fontcolor=white:x=(w-text_w)/2:y=280:shadowcolor=black:shadowx=3:shadowy=3,"
+                f"drawtext=text='{clean_hook}'{font_filter}:fontsize=34:fontcolor=0xfacc15:x=(w-text_w)/2:y=380:shadowcolor=black:shadowx=2:shadowy=2,"
+                f"vignette={vignette}"
+            )
+            cmd = [
+                "ffmpeg", "-y", "-f", "lavfi", "-i", vf,
+                "-frames:v", "1", "-update", "1", str(dst_path)
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=15)
+            return dst_path.exists() and dst_path.stat().st_size > 5000
+        except Exception as e:
+            logger.warning(f"[Thumbnail] Local fallback generation error: {e}")
+            return False
+
     def generate_dual_thumbnails(self, title: str, hook_text: str, visual_prompt: str, category: str = "Mystery") -> Dict[str, Optional[Path]]:
         """
         Creates 2 distinct high-CTR, 16:9 documentary thumbnails:
@@ -180,12 +219,18 @@ class ThumbnailDesigner:
         if not success_a:
             logger.info("[Thumbnail] Falling back Option A to Clean FLUX...")
             success_a = self._render_image_pollinations_clean(prompt_a, final_a, seed=777)
+        if not success_a:
+            logger.info("[Thumbnail] Falling back Option A to Local Cinematic Emergency Canvas...")
+            success_a = self._render_local_fallback(title, hook_text, final_a, style="a")
 
         # Try Tier 2: Grok Imagine 2.0 for Option B
         success_b = self._render_kie_task("grok-imagine/text-to-image", prompt_b, final_b)
         if not success_b:
             logger.info("[Thumbnail] Falling back Option B to Clean FLUX...")
             success_b = self._render_image_pollinations_clean(prompt_b, final_b, seed=999)
+        if not success_b:
+            logger.info("[Thumbnail] Falling back Option B to Local Cinematic Emergency Canvas...")
+            success_b = self._render_local_fallback(title, hook_text, final_b, style="b")
 
         return {
             "thumb_a": final_a if (final_a.exists() and final_a.stat().st_size > 5000) else None,
