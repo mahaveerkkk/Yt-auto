@@ -281,14 +281,19 @@ class Producer:
         worker_manager.start_task("producer", f"Synthesizing voiceover and visual montage for '{title}'")
         logger.info(f"[Producer] 🎬 Initiating Production for: '{title}'")
 
-        # 1. Voice Synthesis (Dynamic Theme Voice Narrator)
+        # 1. Voice Synthesis (Multi-Tier Narrator Engine: Edge-TTS -> gTTS Fallback)
         chosen_voice = self._select_voice_for_topic(title, manifest.get("category", ""))
         voice_path = self.temp_dir / f"{title_slug}_voice.mp3"
         logger.info(f"[Producer] 🎙️ Casted Voice Narrator: {chosen_voice}...")
+
+        voice_synthesized = False
+
+        # Tier 1: Microsoft Edge-TTS Neural Voice
         try:
+            logger.info("[Producer] Attempting Tier 1 Voice Synthesis (Edge-TTS)...")
             async def _synth():
                 comm = edge_tts.Communicate(script, chosen_voice, rate="-2%")
-                await asyncio.wait_for(comm.save(str(voice_path)), timeout=90.0)
+                await asyncio.wait_for(comm.save(str(voice_path)), timeout=60.0)
 
             try:
                 loop = asyncio.get_running_loop()
@@ -298,12 +303,33 @@ class Producer:
             if loop and loop.is_running():
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    executor.submit(asyncio.run, _synth()).result(timeout=100.0)
+                    executor.submit(asyncio.run, _synth()).result(timeout=65.0)
             else:
                 asyncio.run(_synth())
+
+            if voice_path.exists() and voice_path.stat().st_size > 5000:
+                voice_synthesized = True
+                logger.info(f"[Producer] ✅ Tier 1 Edge-TTS succeeded ({voice_path.stat().st_size} bytes)")
         except Exception as e:
-            logger.error(f"[Producer] Voice synthesis failed or timed out: {e}")
-            worker_manager.report_error("producer", f"Voice synthesis error: {e}")
+            logger.warning(f"[Producer] Tier 1 Edge-TTS failed ({e}). Falling back to Tier 2 Google TTS...")
+
+        # Tier 2: Google TTS (gTTS) - 100% Free, IPv6 compatible, zero blocks
+        if not voice_synthesized:
+            try:
+                from gtts import gTTS
+                logger.info("[Producer] 🎙️ Synthesizing Voiceover with Tier 2 Google Engine (gTTS)...")
+                tld = "co.uk" if any(x in chosen_voice.lower() for x in ["ryan", "brian", "gb"]) else "com"
+                tts = gTTS(text=script, lang="en", tld=tld, slow=False)
+                tts.save(str(voice_path))
+                if voice_path.exists() and voice_path.stat().st_size > 5000:
+                    voice_synthesized = True
+                    logger.info(f"[Producer] ✅ Tier 2 Google gTTS succeeded ({voice_path.stat().st_size} bytes)")
+            except Exception as ge:
+                logger.error(f"[Producer] Tier 2 Google gTTS failed: {ge}")
+
+        if not voice_synthesized:
+            logger.error("[Producer] All voice synthesis engines exhausted.")
+            worker_manager.report_error("producer", "All voice synthesis engines exhausted")
             return None
 
         voice_duration = self._get_media_duration(voice_path)
