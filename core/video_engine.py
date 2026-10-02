@@ -140,8 +140,12 @@ class VideoEngine:
                 continue
             try:
                 logger.info(f"[Pexels Stock] Searching footage for query: '{q}'")
-                url = f"https://api.pexels.com/videos/search?query={q}&orientation=landscape&per_page=5"
-                resp = requests.get(url, headers=headers, timeout=15)
+                resp = requests.get(
+                    "https://api.pexels.com/videos/search",
+                    headers=headers,
+                    params={"query": q, "orientation": "landscape", "per_page": 5},
+                    timeout=15
+                )
 
                 if resp.status_code == 200:
                     data = resp.json()

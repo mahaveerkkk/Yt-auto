@@ -79,14 +79,13 @@ class ThumbnailDesigner:
                                 f.write(img_bytes)
 
                             conformed = self._conform_thumbnail(raw_temp, target_path)
+                            if raw_temp.exists():
+                                raw_temp.unlink()
+
                             if conformed:
-                                if raw_temp.exists():
-                                    raw_temp.unlink()
                                 logger.info(f"✅ [Thumbnail] High-Res 16:9 Thumbnail saved ({model_name}): {target_path} ({target_path.stat().st_size} bytes)")
                                 return True
-                            elif raw_temp.exists():
-                                raw_temp.rename(target_path)
-                                return True
+                            logger.warning(f"[Thumbnail] Image conform failed for {model_name}. Rejecting corrupted file.")
                         break
                     elif state in ["fail", "error"]:
                         logger.warning(f"[Thumbnail] Task failed on {model_name}: {sdata.get('failMsg')}")
@@ -122,7 +121,7 @@ class ThumbnailDesigner:
         try:
             clean_p = requests.utils.quote(prompt)
             url = f"https://image.pollinations.ai/prompt/{clean_p}?width=1280&height=740&model=flux&nologo=true&seed={seed}"
-            res = requests.get(url, timeout=15)
+            res = requests.get(url, timeout=35)
             if res.status_code == 200 and len(res.content) > 10000:
                 raw_temp = target_path.with_suffix(".tmp.jpg")
                 with open(raw_temp, "wb") as f:
@@ -130,15 +129,16 @@ class ThumbnailDesigner:
                 # Crop bottom 20px using FFmpeg to eliminate any watermark
                 try:
                     subprocess.run(
-                        ["ffmpeg", "-y", "-i", str(raw_temp), "-vf", "crop=1280:720:0:0", str(target_path)],
-                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                        ["ffmpeg", "-y", "-i", str(raw_temp), "-vf", "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720", str(target_path)],
+                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20
                     )
                     if raw_temp.exists():
                         raw_temp.unlink()
-                    return True
+                    return target_path.exists() and target_path.stat().st_size > 5000
                 except Exception:
-                    raw_temp.rename(target_path)
-                    return True
+                    if raw_temp.exists():
+                        raw_temp.unlink()
+                    return False
         except Exception as e:
             logger.warning(f"[Thumbnail] Clean Pollinations error: {e}")
         return False

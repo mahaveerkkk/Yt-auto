@@ -3,6 +3,7 @@ import requests
 from typing import Optional
 from config.settings import settings
 from utils.logger import logger
+from core.resilience import quota_tracker
 
 class OmniRouter:
     """
@@ -10,9 +11,9 @@ class OmniRouter:
     Intelligent multi-model failover across ALL available free cloud brains:
     
     Priority Chain:
-    1. Gemini 3.8 Flash (Google Cloud Direct - Fastest, Most Reliable, FREE)
-    2. Gemini 3.1 Flash Lite (Google Cloud Direct - Ultra fast lite model)
-    3. OpenRouter Pool (Liquid LFM, Gemma 4, Nemotron, Qwen - All FREE)
+    1. Gemini 2.5 Flash / 2.0 Flash (Google Cloud Direct - Fastest, Most Reliable)
+    2. Gemini 1.5 Flash (Google Cloud Direct - Ultra fast lite fallback)
+    3. OpenRouter Pool (Qwen 2.5, Gemma 2, LLaMA 3.3, Mistral Small - All FREE)
     
     Features:
     - Auto-retry on rate limit (429) with next model in chain
@@ -21,11 +22,10 @@ class OmniRouter:
     """
 
     OPENROUTER_MODELS = [
-        "liquid/lfm-2.5-2.6b:free",
-        "google/gemma-4-26b-a4b-it:free",
-        "nvidia/nemotron-3.5-lightning:free",
-        "qwen/qwen3.8-27b:free",
-        "nvidia/nemotron-3-super-120b-a12b:free"
+        "qwen/qwen-2.5-72b-instruct:free",
+        "google/gemma-2-9b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "mistralai/mistral-small-3-instruct:free"
     ]
 
     def __init__(self):
@@ -34,10 +34,12 @@ class OmniRouter:
 
     def _call_gemini(self, prompt: str, system_prompt: str = "", history: Optional[list] = None) -> Optional[str]:
         """Direct Google Gemini Cloud API call using new google-genai SDK."""
-        if not self.gemini_key:
+        if not self.gemini_key or not quota_tracker.can_use("gemini"):
             return None
 
-        models_to_try = ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash"]
+        configured_model = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
+        models_to_try = ["gemini-3.1-flash-lite", "gemini-flash-lite-latest", "gemini-3.8-flash", configured_model, "gemini-flash-latest"]
+        models_to_try = list(dict.fromkeys(models_to_try))
         
         try:
             from google import genai
@@ -64,6 +66,7 @@ class OmniRouter:
 
                     res = client.models.generate_content(**kwargs)
                     if res and res.text and len(res.text.strip()) > 5:
+                        quota_tracker.record_use("gemini")
                         logger.info(f"[OmniRouter] ✅ Success from Gemini {model_name}!")
                         return res.text
                 except Exception as e:
@@ -83,11 +86,13 @@ class OmniRouter:
 
     def _call_openrouter(self, prompt: str, system_prompt: str = "", history: Optional[list] = None) -> Optional[str]:
         """OpenRouter free models pool with sequential fallback."""
-        if not self.openrouter_key:
+        if not self.openrouter_key or not quota_tracker.can_use("openrouter"):
             return None
 
         headers = {
             "Authorization": f"Bearer {self.openrouter_key}",
+            "HTTP-Referer": "https://voidarchive.local",
+            "X-Title": "Void Archive AutoDirector",
             "Content-Type": "application/json"
         }
         messages = []
@@ -111,6 +116,7 @@ class OmniRouter:
                     data = res.json()
                     content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                     if content and len(content.strip()) > 10:
+                        quota_tracker.record_use("openrouter")
                         logger.info(f"[OmniRouter] ✅ Success from OpenRouter {model_id}!")
                         return content
                 elif res.status_code == 429:

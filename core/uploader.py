@@ -96,11 +96,13 @@ class Uploader:
 
         try:
             creds = Credentials.from_authorized_user_file(str(self.token_file), YOUTUBE_SCOPES)
-            if creds and creds.expired and creds.refresh_token:
+            if creds and not creds.valid and creds.refresh_token:
                 logger.info("[YouTube] Refreshing expired OAuth token...")
                 creds.refresh(Request())
-                with open(self.token_file, "w") as token:
+                temp_token = self.token_file.with_suffix(".tmp")
+                with open(temp_token, "w") as token:
                     token.write(creds.to_json())
+                temp_token.replace(self.token_file)
 
             return build("youtube", "v3", credentials=creds)
         except Exception as e:
@@ -187,6 +189,13 @@ class Uploader:
                         logger.info(f"[YouTube] Uploading: {int(status.progress() * 100)}%")
                     retry_count = 0  # Reset on success
                 except Exception as chunk_err:
+                    err_str = str(chunk_err).lower()
+                    if "quotaexceeded" in err_str or "daily limit" in err_str:
+                        logger.critical("[YouTube] ❌ Daily YouTube API upload quota exceeded! Halting upload immediately.")
+                        return None
+                    if "401" in err_str or "unauthorized" in err_str or "invalid_grant" in err_str:
+                        logger.critical("[YouTube] ❌ OAuth credentials invalid or revoked. Halting upload.")
+                        return None
                     retry_count += 1
                     if retry_count > max_retries:
                         logger.error(f"[YouTube] Upload failed after {max_retries} retries: {chunk_err}")

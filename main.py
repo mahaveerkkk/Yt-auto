@@ -84,6 +84,21 @@ def run_pipeline(topic: str = None, mode: str = "fast", dry_run: bool = False, k
             uploader.send_to_telegram(final_video, caption)
             yt_res = uploader.upload_to_youtube(final_video, manifest)
             if yt_res:
+                try:
+                    import urllib.parse
+                    from core.studio_memory import studio_memory
+                    parsed_url = urllib.parse.urlparse(yt_res)
+                    qs = urllib.parse.parse_qs(parsed_url.query)
+                    video_id = qs.get('v', [parsed_url.path.split('/')[-1]])[0]
+                    studio_memory.record_upload(
+                        video_id=video_id,
+                        title=manifest.get("title", ""),
+                        category=manifest.get("category", "Science & Technology"),
+                        youtube_url=yt_res,
+                        thumb_path=""
+                    )
+                except Exception as rec_err:
+                    logger.warning(f"[Main] Record upload in memory skipped: {rec_err}")
                 notifier.notify_success(title, duration=len(raw_clips) * 5.0, scene_count=len(raw_clips))
             else:
                 logger.warning("[Main] YouTube upload failed or was skipped.")

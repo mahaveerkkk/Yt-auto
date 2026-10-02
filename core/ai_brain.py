@@ -53,27 +53,32 @@ class AIBrain:
         - Daily upload count to avoid YouTube spam filters (Max 2 videos/day for new channel)
         """
         worker_manager.start_task("ai_brain", "Evaluating studio readiness and upload quota")
+        try:
+            # 1. Check quotas
+            if not quota_tracker.can_use("gemini"):
+                worker_manager.complete_task("ai_brain", "Gemini quota exhausted")
+                return {"allowed": False, "reason": "Gemini API daily limit reached"}
+            
+            if not quota_tracker.can_use("pexels"):
+                worker_manager.complete_task("ai_brain", "Pexels quota exhausted")
+                return {"allowed": False, "reason": "Pexels API limit reached"}
 
-        # 1. Check quotas
-        if not quota_tracker.can_use("gemini"):
-            worker_manager.complete_task("ai_brain", "Gemini quota exhausted")
-            return {"allowed": False, "reason": "Gemini API daily limit reached"}
-        
-        if not quota_tracker.can_use("pexels"):
-            worker_manager.complete_task("ai_brain", "Pexels quota exhausted")
-            return {"allowed": False, "reason": "Pexels API limit reached"}
+            # 2. Check daily uploads safely (aligning on UTC/ISO date prefix)
+            from datetime import timezone
+            utc_today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            recent_videos = studio_memory.get_recent_videos(limit=10)
+            completed_today = sum(1 for v in recent_videos if str(v.get("uploaded_at") or "").startswith(utc_today))
 
-        # 2. Check daily uploads from actual video records (not just planned calendar)
-        today = date.today().isoformat()
-        recent_videos = studio_memory.get_recent_videos(limit=10)
-        completed_today = sum(1 for v in recent_videos if v.get("uploaded_at", "").startswith(today))
+            if completed_today >= 1:
+                worker_manager.complete_task("ai_brain", "Daily upload limit (1/1) reached")
+                return {"allowed": False, "reason": "Target 1 high-retention master documentary upload for today already completed"}
 
-        if completed_today >= 1:
-            worker_manager.complete_task("ai_brain", "Daily upload limit (1/1) reached")
-            return {"allowed": False, "reason": "Target 1 high-retention master documentary upload for today already completed"}
-
-        worker_manager.complete_task("ai_brain", "Production approved")
-        return {"allowed": True, "reason": "All systems healthy. Quotas and schedule clear."}
+            worker_manager.complete_task("ai_brain", "Production approved")
+            return {"allowed": True, "reason": "All systems healthy. Quotas and schedule clear."}
+        except Exception as e:
+            logger.error(f"[AIBrain] Error evaluating production readiness: {e}", exc_info=True)
+            worker_manager.report_error("ai_brain", str(e)[:150])
+            return {"allowed": False, "reason": f"AI Brain evaluation error: {str(e)[:80]}"}
 
     def synthesize_topic_decision(self, scouted_topic: Dict[str, Any]) -> Dict[str, Any]:
         """

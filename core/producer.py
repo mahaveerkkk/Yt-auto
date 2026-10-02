@@ -56,14 +56,18 @@ class Producer:
         self.sfx_dir = settings.SFX_DIR
 
     def _get_media_duration(self, file_path: Path) -> float:
-        """Measures exact duration in seconds using ffprobe."""
+        """Measures exact duration in seconds using ffprobe safely."""
+        if not file_path or not Path(file_path).exists() or Path(file_path).stat().st_size < 100:
+            logger.warning(f"[Producer] File {file_path} is missing or empty (<100B).")
+            return 0.0
         try:
             cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(file_path)]
-            res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return float(json.loads(res.stdout)["format"]["duration"])
+            res = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=15)
+            dur = float(json.loads(res.stdout)["format"]["duration"])
+            return max(0.0, dur)
         except Exception as e:
-            logger.warning(f"[Producer] ffprobe failed for {file_path}, using fallback duration: {e}")
-            return 600.0  # 10-minute fallback for long-form documentaries
+            logger.warning(f"[Producer] ffprobe failed for {file_path}: {e}")
+            return 0.0
 
     def _get_ambient_music_track(self) -> Path:
         """Selects a dark ambient cinematic track from the pre-rendered music pool."""
@@ -284,7 +288,7 @@ class Producer:
         try:
             async def _synth():
                 comm = edge_tts.Communicate(script, chosen_voice, rate="-2%")
-                await comm.save(str(voice_path))
+                await asyncio.wait_for(comm.save(str(voice_path)), timeout=90.0)
 
             try:
                 loop = asyncio.get_running_loop()
@@ -294,15 +298,20 @@ class Producer:
             if loop and loop.is_running():
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    executor.submit(asyncio.run, _synth()).result()
+                    executor.submit(asyncio.run, _synth()).result(timeout=100.0)
             else:
                 asyncio.run(_synth())
         except Exception as e:
-            logger.error(f"[Producer] Voice synthesis failed: {e}")
+            logger.error(f"[Producer] Voice synthesis failed or timed out: {e}")
             worker_manager.report_error("producer", f"Voice synthesis error: {e}")
             return None
 
         voice_duration = self._get_media_duration(voice_path)
+        if voice_duration <= 1.0:
+            logger.error(f"[Producer] Synthesized voiceover audio is empty or corrupt ({voice_duration}s). Aborting.")
+            worker_manager.report_error("producer", "Voiceover audio is empty or corrupt")
+            return None
+
         logger.info(f"[Producer] 🎙️ Voiceover Duration: {voice_duration:.1f} seconds (~{voice_duration/60:.1f} mins)")
 
         # Each scene should occupy proportional duration
@@ -450,36 +459,29 @@ class Producer:
         # - Riser at 180s (3 min suspense peak)
         # - Heartbeat at 300s (5 min revelation tension)
         sfx_inputs = []
-        amix_filters = ["[1:a]volume=1.0[v]", "[2:a]volume=0.13[m]"]
+        amix_filters = [
+            "[1:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=1.0[v]",
+            "[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=0.13[m]"
+        ]
         input_count = 2
 
-        if braam_sfx.exists():
-            base_inputs.extend(["-i", str(braam_sfx)])
-            input_count += 1
-            idx = input_count
-            amix_filters.append(f"[{idx}:a]adelay=1500|1500,volume=0.22[sfx_b]")
-            sfx_inputs.append("[sfx_b]")
+        sfx_schedule = [
+            (braam_sfx, 1500, 0.22, "sfx_b"),
+            (whoosh_sfx, 45000, 0.18, "sfx_w"),
+            (riser_sfx, 180000, 0.18, "sfx_r"),
+            (heartbeat_sfx, 300000, 0.20, "sfx_h"),
+        ]
 
-        if whoosh_sfx.exists():
-            base_inputs.extend(["-i", str(whoosh_sfx)])
-            input_count += 1
-            idx = input_count
-            amix_filters.append(f"[{idx}:a]adelay=45000|45000,volume=0.18[sfx_w]")
-            sfx_inputs.append("[sfx_w]")
-
-        if riser_sfx.exists():
-            base_inputs.extend(["-i", str(riser_sfx)])
-            input_count += 1
-            idx = input_count
-            amix_filters.append(f"[{idx}:a]adelay=180000|180000,volume=0.18[sfx_r]")
-            sfx_inputs.append("[sfx_r]")
-
-        if heartbeat_sfx.exists():
-            base_inputs.extend(["-i", str(heartbeat_sfx)])
-            input_count += 1
-            idx = input_count
-            amix_filters.append(f"[{idx}:a]adelay=300000|300000,volume=0.20[sfx_h]")
-            sfx_inputs.append("[sfx_h]")
+        for sfx_file, delay_ms, vol, label in sfx_schedule:
+            if sfx_file.exists():
+                base_inputs.extend(["-i", str(sfx_file)])
+                input_count += 1
+                idx = input_count
+                amix_filters.append(
+                    f"[{idx}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                    f"adelay={delay_ms}:all=1,volume={vol}[{label}]"
+                )
+                sfx_inputs.append(f"[{label}]")
 
         has_outro = outro_clip.exists()
         total_video_duration = round(voice_duration + (12.0 if has_outro else 0.0), 1)
@@ -509,7 +511,11 @@ class Producer:
             str(final_video)
         ]
         try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=600)
+        except subprocess.TimeoutExpired:
+            logger.error("[Producer] Master FFmpeg assembly timed out after 600s!")
+            worker_manager.report_error("producer", "Master FFmpeg assembly timed out")
+            return None
         except subprocess.CalledProcessError as ffe:
             err_msg = ffe.stderr.decode("utf-8", errors="ignore") if ffe.stderr else str(ffe)
             logger.error(f"[Producer] Master FFmpeg assembly failed: {err_msg[:300]}")

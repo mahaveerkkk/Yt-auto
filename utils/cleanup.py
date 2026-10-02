@@ -87,9 +87,10 @@ def prune_disk_hygiene(max_age_hours: int = 48) -> dict:
     for d in scan_dirs:
         if not d.exists():
             continue
+        valid_exts = {".mp4", ".mp3", ".jpg", ".png", ".txt", ".part", ".tmp"}
         try:
             for item in d.glob("*"):
-                if item.is_file() and (item.name.startswith("thumb_") or item.name.startswith("clip_") or item.name.startswith("scene_")):
+                if item.is_file() and item.suffix.lower() in valid_exts:
                     try:
                         if item.stat().st_mtime < cutoff:
                             size = item.stat().st_size

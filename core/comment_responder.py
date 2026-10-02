@@ -94,7 +94,11 @@ class CommentResponder:
                     author = snip.get("authorDisplayName", "Viewer")
                     text = snip.get("textDisplay", "")
 
-                    if not text:
+                    if not text or not cid:
+                        continue
+
+                    # Prevent duplicate processing and infinite comment spam
+                    if studio_memory.is_comment_processed(cid):
                         continue
 
                     # Check for topic suggestion
@@ -130,7 +134,7 @@ class CommentResponder:
                         reply_text = f"Fascinating observation, {safe_author}. The records on this phenomenon continue to yield unanswered questions."
                     reply_text = reply_text.strip().replace('"', '')[:250]
 
-                    # Save to DB
+                    # Save to DB before calling external API to prevent re-processing
                     studio_memory.save_viewer_comment(
                         comment_id=cid,
                         video_id=vid,
@@ -157,6 +161,10 @@ class CommentResponder:
                         studio_memory.mark_comment_replied(cid)
                         logger.info(f"[CommentResponder] ✅ Posted reply to {safe_author}'s comment")
                     except Exception as reply_err:
+                        err_str = str(reply_err).lower()
+                        if "quota" in err_str or "403" in err_str:
+                            logger.error(f"[CommentResponder] YouTube quota exceeded or 403 Forbidden. Halting comment replies.")
+                            break
                         logger.warning(f"[CommentResponder] Failed to post reply to YouTube: {reply_err}")
 
                     new_replies.append({"author": author, "comment": text, "reply": reply_text})

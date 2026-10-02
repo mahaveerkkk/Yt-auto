@@ -56,14 +56,23 @@ class ShortsClipper:
         # 5. Audio: fade-out at the end
         fade_start = max(1, duration_sec - 2)
 
-        # Lightweight 720x1280 vertical standard format (prevents Linux OOM SIGKILL -9)
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf"
+        ]
+        chosen_font = next((p for p in font_paths if Path(p).exists()), "")
+        font_param = f":fontfile='{chosen_font}'" if chosen_font else ""
+
+        # Lightweight 720x1280 vertical standard format (even dimensions, yuv420p)
         filter_graph = (
             f"[0:v]scale=360:640:force_original_aspect_ratio=increase,crop=360:640,boxblur=6:1,scale=720:1280[bg];"
-            f"[0:v]scale=720:-1[fg];"
+            f"[0:v]scale=720:-2:force_original_aspect_ratio=decrease[fg];"
             f"[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
-            f"[base]drawtext=text='VOID ARCHIVE | CLASSIFIED':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=140:box=1:boxcolor=black@0.65:boxborderw=8,"
-            f"drawtext=text='FULL INVESTIGATION ON CHANNEL 👇':fontcolor=yellow:fontsize=26:x=(w-text_w)/2:y=h-180:box=1:boxcolor=black@0.65:boxborderw=8[v];"
-            f"[0:a]afade=t=out:st={fade_start}:d=2[a]"
+            f"[base]drawtext=text='VOID ARCHIVE | CLASSIFIED'{font_param}:fontcolor=white:fontsize=32:x=(w-text_w)/2:y=140:box=1:boxcolor=black@0.65:boxborderw=8,"
+            f"drawtext=text='FULL INVESTIGATION ON CHANNEL [WATCH]'{font_param}:fontcolor=yellow:fontsize=26:x=(w-text_w)/2:y=h-180:box=1:boxcolor=black@0.65:boxborderw=8,"
+            f"format=yuv420p[v];"
+            f"[0:a]aformat=sample_rates=48000:channel_layouts=stereo,afade=t=out:st={fade_start}:d=2[a]"
         )
 
         cmd = [
@@ -78,16 +87,21 @@ class ShortsClipper:
             "-c:v", "libx264",
             "-preset", "veryfast",
             "-crf", "23",
+            "-pix_fmt", "yuv420p",
             "-c:a", "aac",
             "-b:a", "128k",
             str(out_short_path)
         ]
 
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, timeout=180)
             logger.info(f"[ShortsClipper] ✅ Viral Short successfully rendered: {out_short_path}")
             worker_manager.complete_task("producer", "YouTube Short rendering complete")
             return out_short_path
+        except subprocess.TimeoutExpired:
+            logger.error("[ShortsClipper] FFmpeg timed out rendering short after 180s")
+            worker_manager.report_error("producer", "Shorts rendering timed out")
+            return None
         except subprocess.CalledProcessError as e:
             logger.error(f"[ShortsClipper] FFmpeg failed with code {e.returncode}: {e.stderr[-400:]}")
             worker_manager.report_error("producer", f"Shorts clipping failed: {e.returncode}")

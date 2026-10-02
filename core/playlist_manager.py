@@ -74,14 +74,19 @@ class PlaylistManager:
 
         # 2. Check on YouTube
         try:
-            res = service.playlists().list(part="snippet", mine=True, maxResults=25).execute()
-            for item in res.get("items", []):
-                p_title = item.get("snippet", {}).get("title", "")
-                if pillar["name"].lower() in p_title.lower() or pillar["category"].lower() in p_title.lower():
-                    pid = item.get("id")
-                    url = f"https://www.youtube.com/playlist?list={pid}"
-                    studio_memory.save_playlist(pid, p_title, pillar["category"], url, 0)
-                    return pid
+            page_token = None
+            while True:
+                res = service.playlists().list(part="snippet", mine=True, maxResults=50, pageToken=page_token).execute()
+                for item in res.get("items", []):
+                    p_title = item.get("snippet", {}).get("title", "")
+                    if pillar["name"].lower() in p_title.lower() or pillar["category"].lower() in p_title.lower():
+                        pid = item.get("id")
+                        url = f"https://www.youtube.com/playlist?list={pid}"
+                        studio_memory.save_playlist(pid, p_title, pillar["category"], url, 0)
+                        return pid
+                page_token = res.get("nextPageToken")
+                if not page_token:
+                    break
         except Exception as e:
             logger.warning(f"[PlaylistManager] Could not list YouTube playlists: {e}")
 
@@ -143,11 +148,11 @@ class PlaylistManager:
                         }
                     }
                     service.playlistItems().insert(part="snippet", body=body).execute()
+                    studio_memory.increment_playlist_count(playlist_id)
                     logger.info(f"[PlaylistManager] 🗂️ Added '{title[:35]}' to playlist '{pillar['name']}'!")
                 except Exception as e:
                     logger.warning(f"[PlaylistManager] Playlist item insert skipped: {e}")
 
-        studio_memory.increment_playlist_count(playlist_id)
         return playlist_id
 
     def format_playlists_telegram_summary(self) -> str:

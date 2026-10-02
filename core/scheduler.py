@@ -83,18 +83,25 @@ class StudioScheduler:
                 if self.last_production_date != today_str:
                     time_matched = (curr_hour > self.daily_random_hour) or (curr_hour == self.daily_random_hour and curr_minute >= self.daily_random_minute)
                     if time_matched:
-                        self.last_production_date = today_str
                         decision = ai_brain.should_produce_now()
                         if decision.get("allowed"):
+                            self.last_production_date = today_str
                             logger.info(f"[Scheduler] Daily Random Slot Triggered ({curr_hour}:{curr_minute:02d} IST). AI Brain approved production.")
-                            self.notify_callback(f"⏰ *Autonomous Daily Production Triggered ({curr_hour}:{curr_minute:02d} IST)!*\nAI Brain verified quotas & schedule. Deploying documentary team...")
+                            try:
+                                self.notify_callback(f"⏰ *Autonomous Daily Production Triggered ({curr_hour}:{curr_minute:02d} IST)!*\nAI Brain verified quotas & schedule. Deploying documentary team...")
+                            except Exception as ne:
+                                logger.warning(f"[Scheduler] Notify callback failed: {ne}")
                             self.produce_callback(topic=None)
                             # Re-roll randomized slot for next day
                             self.daily_random_hour = random.randint(12, 14)
                             self.daily_random_minute = random.randint(5, 55)
                             logger.info(f"[Scheduler] Next day random production target pre-set: {self.daily_random_hour}:{self.daily_random_minute:02d} IST")
                         else:
-                            logger.info(f"[Scheduler] Production postponed: {decision.get('reason')}")
+                            logger.info(f"[Scheduler] Production postponed: {decision.get('reason')}. Retrying in 20 mins.")
+                            # Push target forward by 20 minutes to retry within window
+                            self.daily_random_minute = (curr_minute + 20) % 60
+                            if curr_minute + 20 >= 60:
+                                self.daily_random_hour = min(self.PRODUCTION_WINDOW_END_HOUR, curr_hour + 1)
 
                 # 3. Strategic A/B Evaluation Loop (Daily / Every 24 hours)
                 if time.time() - self.last_ab_check_time > 86400:

@@ -1,5 +1,6 @@
 import sqlite3
 import json
+import threading
 from pathlib import Path
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional
@@ -18,6 +19,7 @@ class StudioMemory:
     - Worker status & task telemetry
     - Daily reports & content calendar
     """
+    _lock = threading.RLock()
 
     def __init__(self):
         import os
@@ -25,9 +27,15 @@ class StudioMemory:
         self.db_path = Path(test_db) if test_db else settings.LOGS_DIR / "studio_memory.db"
         self._init_db()
 
+    def _get_connection(self):
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
+        return conn
+
     def _init_db(self):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._lock, self._get_connection() as conn:
             cursor = conn.cursor()
             
             # 1. Videos table
@@ -344,17 +352,39 @@ class StudioMemory:
         except Exception as e:
             logger.error(f"[StudioMemory] Add calendar failed: {e}")
 
-    def get_calendar(self, date_str: Optional[str] = None) -> List[Dict[str, Any]]:
-        d = date_str or date.today().isoformat()
+    def get_calendar(self, date_str: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._lock, self._get_connection() as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM content_calendar WHERE planned_date = ? ORDER BY planned_time ASC", (d,))
+                query = "SELECT * FROM content_calendar WHERE 1=1"
+                params = []
+                if date_str:
+                    query += " AND planned_date = ?"
+                    params.append(date_str)
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                query += " ORDER BY planned_date ASC, planned_time ASC"
+                cursor.execute(query, tuple(params))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"[StudioMemory] Calendar fetch failed: {e}")
             return []
+
+    def update_calendar_status(self, entry_id: int, status: str, video_id: str = ""):
+        """Updates the status of a calendar entry."""
+        try:
+            with self._lock, self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE content_calendar 
+                    SET status = ?, video_id = CASE WHEN ? != '' THEN ? ELSE video_id END
+                    WHERE id = ?
+                """, (status, video_id, video_id, entry_id))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"[StudioMemory] Calendar status update failed: {e}")
 
     # ---------------- Playlists ----------------
     def save_playlist(self, playlist_id: str, title: str, category: str, youtube_url: str = "", video_count: int = 0):
@@ -424,6 +454,17 @@ class StudioMemory:
                 conn.commit()
         except Exception as e:
             logger.error(f"[StudioMemory] Mark comment replied failed: {e}")
+
+    def is_comment_processed(self, comment_id: str) -> bool:
+        """Checks if a comment was already scanned or replied to."""
+        try:
+            with self._lock, self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT replied FROM viewer_comments WHERE comment_id = ?", (comment_id,))
+                row = cursor.fetchone()
+                return bool(row is not None)
+        except Exception:
+            return False
 
     def get_suggested_topics(self, limit: int = 10) -> List[Dict[str, Any]]:
         try:

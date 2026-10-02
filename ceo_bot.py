@@ -363,6 +363,11 @@ def cmd_produce(topic: str = None):
             production_active = False
             production_cancel_requested = False
             active_production_topic = None
+            # Reset any worker stuck in working state
+            for w in ("scout", "director", "producer", "thumbnail", "uploader"):
+                st = worker_manager.get_status_overview().get(w, {})
+                if st.get("status") == "working":
+                    worker_manager.complete_task(w, "Task completed or stood down", broadcast=False)
 
     t = threading.Thread(target=_production_task, daemon=True)
     t.start()
@@ -598,7 +603,11 @@ def start_healthcheck_server():
     import os
     from http.server import HTTPServer, BaseHTTPRequestHandler
 
-    port = int(os.getenv("PORT", "8080"))
+    port_raw = os.getenv("PORT", "8080").strip()
+    port = int(port_raw) if port_raw.isdigit() else 8080
+
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
 
     class HealthHandler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -615,12 +624,18 @@ def start_healthcheck_server():
         def log_message(self, format, *args):
             pass
 
-    try:
-        server = HTTPServer(("0.0.0.0", port), HealthHandler)
-        logger.info(f"🌐 Healthcheck HTTP server listening on 0.0.0.0:{port} for Railway")
-        server.serve_forever()
-    except Exception as e:
-        logger.warning(f"Could not start healthcheck server on port {port}: {e}")
+    for attempt in range(5):
+        try:
+            server = ReusableHTTPServer(("0.0.0.0", port), HealthHandler)
+            logger.info(f"🌐 Healthcheck HTTP server listening on 0.0.0.0:{port} (allow_reuse_address=True)")
+            server.serve_forever()
+            break
+        except OSError as e:
+            logger.warning(f"Healthcheck port {port} bind attempt {attempt+1}/5 failed ({e}). Retrying in 2s...")
+            time.sleep(2)
+        except Exception as e:
+            logger.error(f"Fatal error starting healthcheck server: {e}")
+            break
 
 
 def run_bot():
@@ -644,7 +659,11 @@ def run_bot():
         "Send `/help` for commands or give me your orders!"
     )
 
+    from concurrent.futures import ThreadPoolExecutor
+    msg_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tg_worker")
     offset = 0
+    consecutive_conflicts = 0
+
     while True:
         try:
             res = requests.get(
@@ -652,21 +671,38 @@ def run_bot():
                 timeout=25
             )
             if res.status_code == 200:
+                consecutive_conflicts = 0
                 for update in res.json().get("result", []):
                     offset = update["update_id"] + 1
-                    msg = update.get("message", {})
-                    chat_id = str(msg.get("chat", {}).get("id"))
-                    text = msg.get("text", "")
+                    msg = update.get("message") or update.get("edited_message")
+                    if not isinstance(msg, dict):
+                        continue
+                    chat_id = str(msg.get("chat", {}).get("id", ""))
+                    text = msg.get("text") or msg.get("caption") or ""
 
-                    if chat_id == AUTHORIZED_CHAT_ID and text:
-                        process_message(text)
+                    if chat_id == AUTHORIZED_CHAT_ID and text.strip():
+                        # Asynchronous execution so long LLM calls never block the polling loop
+                        msg_executor.submit(process_message, text.strip())
+
             elif res.status_code == 409:
-                logger.warning("[CEO Bot] Telegram 409 Conflict: Another instance is polling (e.g. Railway vs Local)! Backing off 10s...")
+                consecutive_conflicts += 1
+                logger.warning(f"[CEO Bot] Telegram 409 Conflict ({consecutive_conflicts}/5). Backing off 10s...")
                 time.sleep(10)
+                if consecutive_conflicts >= 5:
+                    logger.error("[CEO Bot] Persistent 409 Conflict. Another instance is active. Pausing polling 30s.")
+                    time.sleep(30)
+            elif res.status_code in (401, 404):
+                logger.critical(f"[CEO Bot] Invalid Telegram Bot Token (HTTP {res.status_code}). Exiting polling.")
+                break
             else:
                 logger.warning(f"[CEO Bot] Telegram getUpdates returned HTTP {res.status_code}")
                 time.sleep(3)
-            time.sleep(1)
+        except requests.exceptions.ReadTimeout:
+            # Routine long-polling timeout - immediately loop without error
+            continue
+        except requests.exceptions.ConnectionError as ce:
+            logger.warning(f"[CEO Bot] Network connection error: {ce}. Retrying in 5s...")
+            time.sleep(5)
         except Exception as e:
             logger.error(f"[CEO Bot Loop Error]: {e}")
             time.sleep(3)

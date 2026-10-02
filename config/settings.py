@@ -29,10 +29,10 @@ class Settings:
     KIE_API_KEY: str = os.getenv("KIE_API_KEY", "")
 
     # --- LLM Settings ---
-    # Primary: qwen/qwen3.8-27b:free (fast & powerful), Fallback: gemini-2.5-flash
-    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.8-27b:free")
+    # Primary: qwen/qwen-2.5-72b-instruct:free (fast & powerful), Fallback: gemini-2.5-flash
+    OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-72b-instruct:free")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    LLM_PRIORITY: list = ["openrouter", "gemini"]
+    LLM_PRIORITY: list = ["gemini", "openrouter"]
 
     # --- Video Engine Settings ---
     # Provider chain priority

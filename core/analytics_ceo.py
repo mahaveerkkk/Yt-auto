@@ -64,16 +64,21 @@ class AnalyticsCEO:
             return self._cached_recent or []
 
         try:
-            # Search channel's uploads
-            res = service.search().list(
-                forMine=True,
-                type="video",
+            # Fetch channel's uploaded playlist ID (Cost: 1 quota unit instead of 100)
+            ch_res = service.channels().list(mine=True, part="contentDetails").execute()
+            items = ch_res.get("items", [])
+            if not items:
+                return []
+            uploads_playlist_id = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+            # Fetch recent uploads directly from playlist (Cost: 1 unit)
+            pl_res = service.playlistItems().list(
+                playlistId=uploads_playlist_id,
                 part="snippet",
-                order="date",
                 maxResults=limit
             ).execute()
 
-            video_ids = [item["id"]["videoId"] for item in res.get("items", []) if "videoId" in item.get("id", {})]
+            video_ids = [it["snippet"]["resourceId"]["videoId"] for it in pl_res.get("items", []) if "resourceId" in it.get("snippet", {})]
             if not video_ids:
                 return []
 

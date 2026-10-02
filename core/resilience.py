@@ -98,7 +98,7 @@ class QuotaTracker:
 
     def _init_db(self):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30.0) as conn:
             conn.cursor().execute("""
                 CREATE TABLE IF NOT EXISTS api_quotas (
                     date TEXT,
@@ -120,7 +120,7 @@ class QuotaTracker:
     def record_use(self, service: str, count: int = 1):
         today = self._today()
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
                 conn.cursor().execute("""
                     INSERT INTO api_quotas (date, service, used_count)
                     VALUES (?, ?, ?)
@@ -133,7 +133,7 @@ class QuotaTracker:
     def get_used(self, service: str) -> int:
         today = self._today()
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with sqlite3.connect(self.db_path, timeout=30.0) as conn:
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT used_count FROM api_quotas WHERE date = ? AND service = ?",
