@@ -366,6 +366,22 @@ class Producer:
                     ready_clips.append(clip_target)
                 elif ready_clips:
                     ready_clips.append(ready_clips[-1])
+                else:
+                    # Emergency fallback if first clip fails completely
+                    emergency_clip = self.temp_dir / f"emergency_{beat_counter}_{cut_idx}.mp4"
+                    cmd_em = [
+                        "ffmpeg", "-y", "-f", "lavfi",
+                        "-i", f"color=c=0x0a0c14:s=1280x720:d={sub_cut_duration}:r=30",
+                        "-vf", "noise=alls=15:allf=t+u,format=yuv420p",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-an",
+                        str(emergency_clip)
+                    ]
+                    try:
+                        subprocess.run(cmd_em, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                        if emergency_clip.exists():
+                            ready_clips.append(emergency_clip)
+                    except Exception as e_em:
+                        logger.warning(f"[Producer] Emergency clip error: {e_em}")
 
         if len(ready_clips) < 2:
             logger.error("[Producer] Insufficient visual clips assembled.")
@@ -466,7 +482,7 @@ class Producer:
             sfx_inputs.append("[sfx_h]")
 
         has_outro = outro_clip.exists()
-        total_video_duration = round(voice_duration + (10.0 if has_outro else 0.0), 1)
+        total_video_duration = round(voice_duration + (12.0 if has_outro else 0.0), 1)
 
         all_amix_sources = "[v][m]" + "".join(sfx_inputs)
         total_sources = 2 + len(sfx_inputs)
@@ -492,7 +508,13 @@ class Producer:
             "-c:a", "aac",
             str(final_video)
         ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as ffe:
+            err_msg = ffe.stderr.decode("utf-8", errors="ignore") if ffe.stderr else str(ffe)
+            logger.error(f"[Producer] Master FFmpeg assembly failed: {err_msg[:300]}")
+            worker_manager.report_error("producer", f"Master video assembly failed: {err_msg[:80]}")
+            return None
 
         final_duration = self._get_media_duration(final_video)
         logger.info(f"🎉 MASTER DOCUMENTARY COMPLETE! Duration: {final_duration:.1f}s | Path: {final_video}")

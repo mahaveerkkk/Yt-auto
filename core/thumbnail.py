@@ -47,8 +47,8 @@ class ThumbnailDesigner:
                 logger.warning(f"[Thumbnail] Kie.ai task submission returned status {create_res.status_code}: {create_res.text[:150]}")
                 return False
 
-            data = create_res.json()
-            task_id = data.get("data", {}).get("taskId")
+            data = create_res.json() or {}
+            task_id = (data.get("data") or {}).get("taskId")
             if not task_id:
                 logger.warning(f"[Thumbnail] No taskId in Kie.ai response: {data}")
                 return False
@@ -61,29 +61,30 @@ class ThumbnailDesigner:
                     status_res = requests.get(f"https://api.kie.ai/api/v1/jobs/recordInfo?taskId={task_id}", headers=headers, timeout=25)
                     if status_res.status_code != 200:
                         continue
-                    sdata = status_res.json().get("data", {})
+                    sdata = (status_res.json() or {}).get("data") or {}
                     state = sdata.get("state")
                     if state == "success":
-                        result_urls = sdata.get("response", {}).get("resultUrls") or []
+                        result_urls = (sdata.get("response") or {}).get("resultUrls") or []
                         if not result_urls and "resultJson" in sdata:
                             try:
-                                result_urls = json.loads(sdata["resultJson"]).get("resultUrls", [])
+                                result_urls = (json.loads(sdata["resultJson"]) or {}).get("resultUrls", [])
                             except Exception:
                                 pass
                         if result_urls:
-                            img_bytes = requests.get(result_urls[0], timeout=35).content
+                            dl_res = requests.get(result_urls[0], timeout=35)
+                            dl_res.raise_for_status()
+                            img_bytes = dl_res.content
                             raw_temp = target_path.with_suffix(".raw.png")
                             with open(raw_temp, "wb") as f:
                                 f.write(img_bytes)
 
                             conformed = self._conform_thumbnail(raw_temp, target_path)
-                            if raw_temp.exists():
-                                raw_temp.unlink()
-
                             if conformed:
+                                if raw_temp.exists():
+                                    raw_temp.unlink()
                                 logger.info(f"✅ [Thumbnail] High-Res 16:9 Thumbnail saved ({model_name}): {target_path} ({target_path.stat().st_size} bytes)")
                                 return True
-                            else:
+                            elif raw_temp.exists():
                                 raw_temp.rename(target_path)
                                 return True
                         break

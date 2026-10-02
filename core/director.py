@@ -135,8 +135,23 @@ class Director:
                     clean_json = match.group(1)
 
                 parsed = json.loads(clean_json)
-                if "title" in parsed and "scenes" in parsed:
-                    return parsed
+                if "title" in parsed and isinstance(parsed.get("scenes"), list) and len(parsed["scenes"]) > 0:
+                    sanitized_scenes = []
+                    for idx, sc in enumerate(parsed["scenes"], 1):
+                        if isinstance(sc, dict):
+                            sc["index"] = sc.get("index", idx)
+                            sc["prompt"] = sc.get("prompt", str(topic))
+                            sc["keywords"] = sc.get("keywords", topic[:20])
+                            sanitized_scenes.append(sc)
+                        elif isinstance(sc, str):
+                            sanitized_scenes.append({
+                                "index": idx,
+                                "prompt": sc,
+                                "keywords": sc[:30]
+                            })
+                    if sanitized_scenes:
+                        parsed["scenes"] = sanitized_scenes
+                        return parsed
             except Exception as e:
                 logger.warning(f"[Director] Scene metadata parsing error: {e}")
 
@@ -192,7 +207,7 @@ class Director:
 
         return chapters
 
-    def generate_manifest(self, topic: Optional[str] = None, target_duration_sec: int = 540) -> Dict[str, Any]:
+    def generate_manifest(self, topic: Optional[str] = None, target_duration_sec: int = 540, category: str = "Mystery") -> Dict[str, Any]:
         """Generates full documentary production manifest guaranteed to produce 8-12 minute videos with SEO timestamps."""
         chosen_topic = topic or "The Mariana Trench Challenger Deep Metallic Sound"
         worker_manager.start_task("director", f"Directing 8-10 min screenplay for '{chosen_topic}'")
@@ -234,6 +249,7 @@ class Director:
 
             manifest = {
                 "title": metadata.get("title", f"The Terrifying Secret of {chosen_topic}"),
+                "category": category,
                 "description": final_desc,
                 "tags": metadata.get("tags", []),
                 "hashtags": metadata.get("hashtags", ["#Mystery", "#Documentary"]),
@@ -307,6 +323,7 @@ class Director:
 
         manifest = {
             "title": f"The Terrifying Secret Behind {chosen_topic[:45]}",
+            "category": category,
             "description": final_desc,
             "tags": metadata.get("tags", []),
             "hashtags": metadata.get("hashtags", ["#Mystery", "#Documentary"]),

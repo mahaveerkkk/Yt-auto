@@ -223,8 +223,11 @@ def cmd_produce(topic: str = None):
             # Step 2: Director Script (6-Act Long-Form Screenplay)
             if production_cancel_requested:
                 return
-            send_tg("✍️ *Director Agent:* Scripting 6-Act documentary screenplay via Gemini...")
-            manifest = director.generate_manifest(title, target_duration_sec=target_duration)
+            manifest = director.generate_manifest(
+                title,
+                target_duration_sec=target_duration,
+                category=topic_info.get("category", "Mystery")
+            )
 
             if production_cancel_requested:
                 logger.info("[Production] Cancelled after script generation.")

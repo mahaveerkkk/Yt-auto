@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import subprocess
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -13,7 +15,8 @@ from googleapiclient.http import MediaFileUpload
 
 YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly"
+    "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube.force-ssl"
 ]
 
 
