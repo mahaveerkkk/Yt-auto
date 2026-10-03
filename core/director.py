@@ -140,8 +140,10 @@ class Director:
                     for idx, sc in enumerate(parsed["scenes"], 1):
                         if isinstance(sc, dict):
                             sc["index"] = sc.get("index", idx)
-                            sc["prompt"] = sc.get("prompt", str(topic))
-                            sc["keywords"] = sc.get("keywords", topic[:20])
+                            raw_p = sc.get("prompt", str(topic))
+                            sc["prompt"] = " ".join(str(w) for w in raw_p) if isinstance(raw_p, list) else str(raw_p)
+                            raw_k = sc.get("keywords", topic[:20])
+                            sc["keywords"] = " ".join(str(w) for w in raw_k) if isinstance(raw_k, list) else str(raw_k)
                             sanitized_scenes.append(sc)
                         elif isinstance(sc, str):
                             sanitized_scenes.append({

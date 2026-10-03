@@ -124,6 +124,11 @@ class VideoEngine:
             logger.warning("[Pexels] No PEXELS_API_KEY provided in .env.")
             return False
 
+        if isinstance(query, list):
+            query = " ".join(str(w) for w in query)
+        elif not isinstance(query, str):
+            query = str(query or "")
+
         headers = {"Authorization": self.pexels_key}
 
         # Build fallback search candidates from specific to general
@@ -192,8 +197,9 @@ class VideoEngine:
         mode='fast': uses instant Pexels HD stock clips (ultra-fast, reliable)
         mode='ai': attempts cloud AI video models (Wan 2.x, LTX) with fallback
         """
-        output_path = self.parts_dir / f"part_{scene_index:02d}.mp4"
-        search_query = search_fallback_term or scene_prompt.split(",")[0]
+        fallback_str = " ".join(str(w) for w in search_fallback_term) if isinstance(search_fallback_term, list) else (str(search_fallback_term) if search_fallback_term else "")
+        prompt_first = scene_prompt.split(",")[0] if isinstance(scene_prompt, str) else str(scene_prompt or "")
+        search_query = fallback_str or prompt_first
 
         if mode == "fast":
             logger.info(f"[VideoEngine] Fast mode: fetching stock video for '{search_query}'")

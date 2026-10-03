@@ -122,6 +122,10 @@ class Producer:
         if not self.pexels_key or not quota_tracker.can_use("pexels"):
             return False
         try:
+            if isinstance(query, list):
+                query = " ".join(str(w) for w in query)
+            elif not isinstance(query, str):
+                query = str(query or "")
             clean_words = [w for w in query.replace("!", "").replace("?", "").replace(":", "").split() if len(w) > 2][:3]
             search_term = " ".join(clean_words) if clean_words else "deep space galaxy"
             logger.info(f"[Producer] Scouting Pexels HD Footage for: '{search_term}'...")
@@ -356,8 +360,19 @@ class Producer:
                 worker_manager.report_error("producer", "Production cancelled by user")
                 return None
 
-            base_query = sc.get("keywords") or sc.get("prompt") or title
-            scene_prompt = sc.get("prompt") or title
+            raw_base = sc.get("keywords") or sc.get("prompt") or title
+            if isinstance(raw_base, list):
+                base_query = " ".join(str(w) for w in raw_base)
+            elif isinstance(raw_base, dict):
+                base_query = " ".join(str(v) for v in raw_base.values())
+            else:
+                base_query = str(raw_base or title)
+
+            raw_prompt = sc.get("prompt") or title
+            if isinstance(raw_prompt, list):
+                scene_prompt = " ".join(str(w) for w in raw_prompt)
+            else:
+                scene_prompt = str(raw_prompt or title)
 
             # Calculate how many visual cuts (sub-beats) this scene needs (target 6-8s per cut)
             target_cut_duration = random.uniform(6.0, 8.5)
