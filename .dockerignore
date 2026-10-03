@@ -1,0 +1,15 @@
+config/.env
+config/client_secrets.json
+config/youtube_token.json
+venv/
+__pycache__/
+core/__pycache__/
+notifier/__pycache__/
+utils/__pycache__/
+logs/
+output/
+.git/
+.gitignore
+tests/
+docs/
+*.pyc

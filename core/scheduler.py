@@ -36,12 +36,22 @@ class StudioScheduler:
         self.last_cleanup_date = None
         self.last_sunday_report_date = None
         self.last_production_date = None
+        self._production_running = False
         # Daily randomized target time in window: hour between 12-14, minute between 5-55
         self.daily_random_hour = random.randint(12, 14)
         self.daily_random_minute = random.randint(5, 55)
         self.last_ab_check_time = time.time()
         self.last_comment_check_time = time.time()
         self.last_heartbeat_time = time.time()
+
+    def _safe_produce(self, topic, today_str):
+        try:
+            self.produce_callback(topic=topic)
+            self.last_production_date = today_str
+        except Exception as e:
+            logger.error(f"Production failed in background: {e}")
+        finally:
+            self._production_running = False
 
     def start(self):
         self.running = True
@@ -80,18 +90,24 @@ class StudioScheduler:
                     self.last_sunday_report_date = today_str
 
                 # 2. Autonomous Daily 1 Production Check (Randomized Window between 12:00 PM - 03:00 PM IST)
-                if self.last_production_date != today_str:
+                if not self._production_running and self.last_production_date != today_str:
                     time_matched = (curr_hour > self.daily_random_hour) or (curr_hour == self.daily_random_hour and curr_minute >= self.daily_random_minute)
                     if time_matched:
                         decision = ai_brain.should_produce_now()
                         if decision.get("allowed"):
-                            self.last_production_date = today_str
                             logger.info(f"[Scheduler] Daily Random Slot Triggered ({curr_hour}:{curr_minute:02d} IST). AI Brain approved production.")
                             try:
                                 self.notify_callback(f"⏰ *Autonomous Daily Production Triggered ({curr_hour}:{curr_minute:02d} IST)!*\nAI Brain verified quotas & schedule. Deploying documentary team...")
                             except Exception as ne:
                                 logger.warning(f"[Scheduler] Notify callback failed: {ne}")
-                            self.produce_callback(topic=None)
+                            
+                            self._production_running = True
+                            threading.Thread(
+                                target=self._safe_produce,
+                                args=(None, today_str),
+                                daemon=True
+                            ).start()
+
                             # Re-roll randomized slot for next day
                             self.daily_random_hour = random.randint(12, 14)
                             self.daily_random_minute = random.randint(5, 55)
@@ -101,7 +117,7 @@ class StudioScheduler:
                             # Push target forward by 20 minutes to retry within window
                             self.daily_random_minute = (curr_minute + 20) % 60
                             if curr_minute + 20 >= 60:
-                                self.daily_random_hour = min(self.PRODUCTION_WINDOW_END_HOUR, curr_hour + 1)
+                                self.daily_random_hour = curr_hour + 1
 
                 # 3. Strategic A/B Evaluation Loop (Daily / Every 24 hours)
                 if time.time() - self.last_ab_check_time > 86400:

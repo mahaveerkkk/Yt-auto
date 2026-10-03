@@ -1,3 +1,4 @@
+import os
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -7,7 +8,8 @@ settings.ensure_directories()
 LOG_FILE = settings.LOGS_DIR / "autodirector.log"
 
 logger = logging.getLogger("AutoDirector")
-logger.setLevel(logging.INFO)
+log_level = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO)
+logger.setLevel(log_level)
 
 # Formatter
 formatter = logging.Formatter(
@@ -20,12 +22,12 @@ file_handler = RotatingFileHandler(
     LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
 )
 file_handler.setFormatter(formatter)
-file_handler.setLevel(logging.INFO)
+file_handler.setLevel(log_level)
 
 # Console Handler
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
-console_handler.setLevel(logging.INFO)
+console_handler.setLevel(log_level)
 
 if not logger.handlers:
     logger.addHandler(file_handler)

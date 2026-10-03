@@ -181,7 +181,7 @@ class Uploader:
 
         try:
             logger.info(f"[YouTube] Starting upload of '{video_path.name}' to channel ({privacy_status})...")
-            media = MediaFileUpload(str(video_path), chunksize=-1, resumable=True, mimetype="video/mp4")
+            media = MediaFileUpload(str(video_path), chunksize=10*1024*1024, resumable=True, mimetype="video/mp4")
             request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
             response = None

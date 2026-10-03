@@ -163,6 +163,8 @@ class ThumbnailDesigner:
             font_filter = f":fontfile='{font_path}'" if Path(font_path).exists() else ""
             clean_title = "".join(c for c in title if c.isalnum() or c in (" ", "-", ":", "?", "!"))[:38].replace("'", "")
             clean_hook = "".join(c for c in hook_text if c.isalnum() or c in (" ", "-", ":", "?", "!"))[:40].replace("'", "")
+            clean_title = clean_title.replace(":", "\\:")
+            clean_hook = clean_hook.replace(":", "\\:")
 
             vf = (
                 f"color=c={bg_color}:s=1280x720:d=1,"

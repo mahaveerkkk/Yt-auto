@@ -134,18 +134,6 @@ class CommentResponder:
                         reply_text = f"Fascinating observation, {safe_author}. The records on this phenomenon continue to yield unanswered questions."
                     reply_text = reply_text.strip().replace('"', '')[:250]
 
-                    # Save to DB before calling external API to prevent re-processing
-                    studio_memory.save_viewer_comment(
-                        comment_id=cid,
-                        video_id=vid,
-                        author=author,
-                        text=text,
-                        is_topic_suggestion=is_suggestion,
-                        extracted_topic=suggested_topic or "",
-                        reply_text=reply_text,
-                        replied=0
-                    )
-
                     # Actually post the reply to YouTube
                     try:
                         service.comments().insert(
@@ -157,8 +145,17 @@ class CommentResponder:
                                 }
                             }
                         ).execute()
-                        # Mark as replied in DB
-                        studio_memory.mark_comment_replied(cid)
+                        # Save to DB after successfully calling external API
+                        studio_memory.save_viewer_comment(
+                            comment_id=cid,
+                            video_id=vid,
+                            author=author,
+                            text=text,
+                            is_topic_suggestion=is_suggestion,
+                            extracted_topic=suggested_topic or "",
+                            reply_text=reply_text,
+                            replied=1
+                        )
                         logger.info(f"[CommentResponder] ✅ Posted reply to {safe_author}'s comment")
                     except Exception as reply_err:
                         err_str = str(reply_err).lower()

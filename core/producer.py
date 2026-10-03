@@ -297,7 +297,7 @@ class Producer:
             logger.info("[Producer] Attempting Tier 1 Voice Synthesis (Edge-TTS)...")
             async def _synth():
                 comm = edge_tts.Communicate(script, chosen_voice, rate="-2%")
-                await asyncio.wait_for(comm.save(str(voice_path)), timeout=60.0)
+                await asyncio.wait_for(comm.save(str(voice_path)), timeout=180.0)
 
             try:
                 loop = asyncio.get_running_loop()
@@ -413,7 +413,13 @@ class Producer:
                     motion_choices = ["in", "out", "pan"]
                     chosen_motion = motion_choices[(beat_counter + cut_idx) % len(motion_choices)]
                     self._create_3d_motion(img_target, clip_target, motion_type=chosen_motion, duration=sub_cut_duration)
-                    ready_clips.append(clip_target)
+                    if clip_target.exists():
+                        ready_clips.append(clip_target)
+                    elif ready_clips:
+                        logger.warning(f"Beat {beat_counter} failed, duplicating previous clip")
+                        ready_clips.append(ready_clips[-1])
+                    else:
+                        logger.error(f"Beat {beat_counter} failed and no previous clip to duplicate")
                 elif ready_clips:
                     ready_clips.append(ready_clips[-1])
                 else:

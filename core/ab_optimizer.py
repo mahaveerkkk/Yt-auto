@@ -88,8 +88,13 @@ class ABOptimizer:
                 return None
             curr = curr_items[0]
             snippet = curr["snippet"]
-            snippet["title"] = new_title
-            service.videos().update(part="snippet", body={"id": video_id, "snippet": snippet}).execute()
+            clean_snippet = {
+                "title": new_title,
+                "description": snippet.get("description", ""),
+                "categoryId": snippet.get("categoryId", "28"),
+                "tags": snippet.get("tags", [])
+            }
+            service.videos().update(part="snippet", body={"id": video_id, "snippet": clean_snippet}).execute()
             logger.info(f"[ABOptimizer] YouTube Title updated to: '{new_title}'")
         except Exception as e:
             logger.error(f"[ABOptimizer] Failed to update title on YouTube: {e}")

@@ -277,10 +277,11 @@ class StudioMemory:
         try:
             with self._lock, self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT success_count, error_count, total_tasks FROM worker_status WHERE worker_name = ?", (worker_name,))
+                cursor.execute("SELECT success_count, error_count, total_tasks, status FROM worker_status WHERE worker_name = ?", (worker_name,))
                 row = cursor.fetchone()
                 
-                success_count = (row[0] if row else 0) + (1 if status == 'idle' and not error_msg else 0)
+                prev_status = row[3] if row else None
+                success_count = (row[0] if row else 0) + (1 if status == 'idle' and prev_status == 'working' and not error_msg else 0)
                 error_count = (row[1] if row else 0) + (1 if status == 'error' or error_msg else 0)
                 total_tasks = (row[2] if row else 0) + (1 if status == 'working' else 0)
                 last_success = now if (status == 'idle' and not error_msg) else (None if not row else None)
@@ -462,7 +463,7 @@ class StudioMemory:
                 cursor = conn.cursor()
                 cursor.execute("SELECT replied FROM viewer_comments WHERE comment_id = ?", (comment_id,))
                 row = cursor.fetchone()
-                return bool(row is not None)
+                return bool(row is not None and row[0] == 1)
         except Exception:
             return False
 

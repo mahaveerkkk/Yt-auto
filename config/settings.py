@@ -42,7 +42,7 @@ class Settings:
     HF_TIMEOUT_SECONDS: int = 180  # 3 min timeout for Hugging Face queues
 
     # --- Voice Settings (edge-tts) ---
-    DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "hi")  # 'hi' or 'en'
+    DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "en")  # 'hi' or 'en'
     VOICE_HI_MALE: str = "hi-IN-MadhurNeural"
     VOICE_HI_FEMALE: str = "hi-IN-SwaraNeural"
     VOICE_EN_MALE: str = "en-US-GuyNeural"

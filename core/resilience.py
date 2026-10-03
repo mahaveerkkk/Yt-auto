@@ -93,7 +93,12 @@ class QuotaTracker:
     }
 
     def __init__(self):
-        self.db_path = settings.LOGS_DIR / "studio_memory.db"
+        import os
+        test_db = os.environ.get("STUDIO_MEMORY_TEST_DB")
+        if test_db:
+            self.db_path = Path(test_db) / "quota_tracker.db"
+        else:
+            self.db_path = settings.LOGS_DIR / "studio_memory.db"
         self._init_db()
 
     def _init_db(self):

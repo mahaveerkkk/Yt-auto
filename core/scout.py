@@ -248,6 +248,7 @@ class Scout:
                 }
                 logger.info(f"[Scout] 🎯 Prioritizing viewer-requested topic from comments: '{raw_cand['topic']}'")
                 polished = self._polish_viral_title(raw_cand)
+                self._save_history(raw_cand["topic"])
                 self._save_history(polished["topic"])
                 worker_manager.complete_task("scout", f"Audience topic locked: {polished['topic']}")
                 return polished
@@ -262,6 +263,7 @@ class Scout:
         if fresh_live and random.random() < 0.35:
             chosen = random.choice(fresh_live)
             polished = self._polish_viral_title(chosen)
+            self._save_history(chosen["topic"])
             self._save_history(polished["topic"])
             logger.info(f"[Scout] Selected LIVE web trend: '{polished['topic']}'")
             worker_manager.complete_task("scout", f"Live trend locked: {polished['topic']}")
@@ -273,6 +275,7 @@ class Scout:
         if fresh_yt and random.random() < 0.25:
             chosen = random.choice(fresh_yt)
             polished = self._polish_viral_title(chosen)
+            self._save_history(chosen["topic"])
             self._save_history(polished["topic"])
             logger.info(f"[Scout] Selected YouTube RSS inspiration: '{polished['topic']}'")
             worker_manager.complete_task("scout", f"YT inspiration locked: {polished['topic']}")

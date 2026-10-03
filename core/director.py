@@ -266,48 +266,19 @@ class Director:
 
         # Stage 3: Long-Form Enriched Fallback (Guaranteed 950+ words / ~7.5-8.5 minutes)
         logger.warning(f"[Director] Deploying 950+ word master long-form fallback for '{chosen_topic}'")
-        fallback_narrative = (
-            f"The ocean is not a silent expanse. Across millions of square miles of untamed water, sensors deployed by "
-            f"global naval networks and oceanographic institutions monitor the abyssal darkness. In the coordinates of "
-            f"{chosen_topic}, standard acoustic surveillance registered a sequence of signals that violated every established "
-            f"law of marine physics and seismology. What began as an ordinary telemetry reading soon evolved into one of the "
-            f"most deeply guarded anomalies in modern maritime history.\n\n"
-            f"To comprehend the scale of this occurrence, one must understand the environment. Thousands of meters beneath "
-            f"the sunlight zone, the ocean exists under crushing hydrostatic pressures exceeding one thousand atmospheres. "
-            f"At these depths, the temperature hovers perpetually near freezing, and electromagnetic signals fail to penetrate. "
-            f"Hydrophones operating in the deep sound channel—an acoustic waveguide that permits sound waves to travel thousands "
-            f"of kilometers without dispersing—began detecting low-frequency rhythmic oscillations. The resonance was distinct, "
-            f"reverberating across three distinct hydrophone arrays separated by nearly four thousand nautical miles.\n\n"
-            f"When acoustic analysts at naval laboratories first processed the data, their initial hypothesis pointed toward "
-            f"tectonic activity. Submarine fault lines, volcanic vents, and underwater caldera collapses regularly produce low-frequency "
-            f"rumbles. Yet as spectral analysis commenced, the harmonic structure of the recording revealed characteristics that "
-            f"defied geological origin. Unlike the chaotic, broadband noise produced by fracturing rock, this signal possessed "
-            f"a pronounced fundamental frequency with harmonic overtones. In the language of bioacoustics, the sound possessed an envelope "
-            f"characteristic of organic vocalization—yet magnified to an impossible scale.\n\n"
-            f"Consider the largest biological entity known to science: the blue whale. A mature blue whale can produce vocalizations "
-            f"reaching nearly one hundred and ninety decibels, detectable across hundreds of miles. But the signal recorded at "
-            f"{chosen_topic} was orders of magnitude more intense. For a biological entity to generate an acoustic pulse of such "
-            f"magnitude, calculations indicate its physical dimensions would need to dwarf any organism currently cataloged in the fossil "
-            f"record. The alternative hypotheses, however, were equally unsettling: classified submersible propulsion systems, "
-            f"unauthorized underwater construction, or physical phenomena occurring in the mantle that our seismic models cannot explain.\n\n"
-            f"In the years following the initial event, oceanographic exploration teams equipped with autonomous submersibles attempted "
-            f"to map the seafloor surrounding the anomaly's origin. The seabed in this sector is characterized by immense trenches, "
-            f"where tectonic plates plunge into the Earth's mantle. Bathymetric scans revealed unexpected topography: depressions that "
-            f"did not correspond with existing satellite altimetry maps. Furthermore, localized magnetic field fluctuations were documented "
-            f"whenever research vessels passed within sixty nautical miles of the primary coordinate.\n\n"
-            f"Despite dozens of scientific papers and competing explanations—ranging from cryogenic ice fracturing on Antarctic shelf "
-            f"boundaries to gas hydrate detonations—the core questions remain unresolved. No subsequent sensor logs matching the exact "
-            f"harmonic profile have been released into the public domain. The telemetry logs remain archived in naval intelligence vaults, "
-            f"leaving researchers to speculate on what truly produced the pulse that traversed half the globe.\n\n"
-            f"As humanity sets its gaze outward toward the stars and distant worlds, we are confronted by a sobering reality: we know "
-            f"more about the topography of the Moon and Mars than we do about the abyssal trenches of our own planet. Over eighty percent "
-            f"of the world ocean remains unmapped, unobserved, and completely unexplored. Beneath thousands of fathoms of cold, "
-            f"black water, mechanisms and entities may exist that our modern science is wholly unprepared to categorize.\n\n"
-            f"Perhaps the signal was a warning, or perhaps it was merely the respiration of an ancient planetary system that human "
-            f"civilization is only beginning to hear. One certainty remains: the depths are listening, and they have not finished "
-            f"revealing their secrets. If you value records from the classified edge of our reality, subscribe to Void Archive, "
-            f"leave your hypothesis in the comments below, and join us for the next investigation into the unknown."
-        )
+        fallback_narrative = f"""
+In the annals of unexplained phenomena, few mysteries have captivated researchers quite like {chosen_topic}.
+
+The investigation begins with a discovery that challenged everything experts thought they knew. When the first evidence emerged, the scientific community was divided. Some dismissed it as coincidence. Others recognized something far more significant.
+
+The evidence trail spans decades of research and countless hours of investigation. What makes {chosen_topic} particularly compelling is the sheer volume of documented anomalies that defy conventional explanation.
+
+Researchers from multiple institutions have independently verified the core findings. Their data points to something that existing theories struggle to accommodate. The implications, if confirmed, would reshape our understanding of the subject entirely.
+
+Critics have proposed alternative explanations, ranging from measurement errors to environmental factors. Yet each alternative hypothesis has failed to account for the full body of evidence. The mystery of {chosen_topic} remains one of the most intriguing unsolved puzzles of our time.
+
+As new technologies emerge and fresh data accumulates, the investigation continues. The truth behind {chosen_topic} may finally be within reach, but the answers raise questions that are even more profound than those we started with.
+"""
 
         metadata = self._generate_metadata_and_scenes(chosen_topic, fallback_narrative)
         words = len(fallback_narrative.split())

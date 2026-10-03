@@ -174,6 +174,7 @@ def cmd_stop():
     global production_cancel_requested, production_active
     if production_active:
         production_cancel_requested = True
+        thumb_pick_event.set()
         worker_manager.complete_task("producer", "Cancelled by Boss order")
         worker_manager.complete_task("director", "Cancelled by Boss order")
         worker_manager.complete_task("scout", "Cancelled by Boss order")
@@ -457,7 +458,10 @@ def handle_natural_chat(text: str):
         f"4. Keep it friendly, positive, high-energy, and under 110 words."
     )
 
-    reply = omni_router.query(prompt=text, system_prompt=system, history=conversation_history)
+    with history_lock:
+        current_history = list(conversation_history)
+
+    reply = omni_router.query(prompt=text, system_prompt=system, history=current_history)
 
     if not reply:
         send_tg(
@@ -543,7 +547,10 @@ def process_message(text: str):
         cmd_stop()
         return
 
-    if lower in ("/start", "/help"):
+    cmd_parts = lower.split()
+    cmd = cmd_parts[0] if cmd_parts else ""
+
+    if cmd in ("/start", "/help"):
         send_tg(
             "👑 *Void Archive AI CEO v3 — Command Center*\n\n"
             "📊 `/status` — Channel stats & monetization tracking\n"
@@ -564,12 +571,12 @@ def process_message(text: str):
             "🛑 `/stop` — Cancel active production\n\n"
             "Ya seedha koi bhi baat karo mujhse! 💬"
         )
-    elif lower.startswith("/pick"):
+    elif cmd == "/pick":
         global selected_thumb_choice
         if not waiting_for_thumb_pick:
             send_tg("ℹ️ Boss, abhi koi thumbnail selection window open nahi hai. Video render complete hone par alerts aayenge!")
             return
-        choice = lower.replace("/pick", "").strip().upper()
+        choice = cmd_parts[1].upper() if len(cmd_parts) > 1 else ""
         if "B" in choice:
             selected_thumb_choice = "B"
             thumb_pick_event.set()
@@ -580,46 +587,47 @@ def process_message(text: str):
             send_tg("🎯 *Cover Selection Registered:* Option A will be used for YouTube upload!")
         else:
             send_tg("ℹ️ Usage: `/pick A` ya `/pick B`")
-    elif lower.startswith("/tech") or lower.startswith("/radar"):
+    elif cmd in ("/tech", "/radar", "/tech_radar"):
         send_tg(tech_scout.format_tech_radar_telegram())
-    elif lower.startswith("/revenue") or lower.startswith("/audit"):
+    elif cmd in ("/revenue", "/audit"):
         ceo_comms.send_weekly_revenue_report()
-    elif lower.startswith("/delete"):
+    elif cmd == "/delete":
         send_tg(
             "🛑 *SECURITY GUARDRAIL (Tier 3 Permission):*\n"
             "AI CEO is strictly prohibited from deleting or unlisting public YouTube videos autonomously!\n"
             "Agar aapko sach mein kisi video ko delete karna hai, toh command bhejo: `/confirm_delete [video_id]`"
         )
-    elif lower.startswith("/confirm_delete"):
-        vid_id = text.replace("/confirm_delete", "").strip()
+    elif cmd == "/confirm_delete":
+        vid_id = cmd_parts[1] if len(cmd_parts) > 1 else ""
         if vid_id:
             send_tg(f"⚠️ *Manual Deletion Notice:* Boss requested deletion for video `{vid_id}`. Please delete manually in YouTube Studio for 100% channel safety.")
         else:
             send_tg("ℹ️ Usage: `/confirm_delete [video_id]`")
-    elif lower.startswith("/status") or lower.startswith("/stat"):
+    elif cmd in ("/status", "/stat"):
         cmd_status()
-    elif lower.startswith("/worker"):
+    elif cmd in ("/workers", "/worker"):
         cmd_workers()
-    elif lower.startswith("/strategy") or lower.startswith("/strat"):
+    elif cmd in ("/strategy", "/strat"):
         cmd_strategy()
-    elif lower.startswith("/playlist"):
+    elif cmd in ("/playlists", "/playlist"):
         send_tg(playlist_manager.format_playlists_telegram_summary())
-    elif lower.startswith("/comment"):
+    elif cmd in ("/comments", "/comment"):
         send_tg(comment_responder.format_comments_telegram_summary())
-    elif lower.startswith("/poll"):
+    elif cmd == "/poll":
         send_tg(community_manager.format_poll_for_telegram())
-    elif lower.startswith("/quota") or lower.startswith("/quot"):
+    elif cmd in ("/quota", "/quot"):
         cmd_quota()
-    elif lower.startswith("/trending") or lower.startswith("/trend"):
+    elif cmd in ("/trending", "/trend"):
         cmd_trending()
-    elif lower.startswith("/analyze"):
+    elif cmd == "/analyze":
         cmd_analyze()
-    elif lower.startswith("/stop") or lower.startswith("/cancel"):
+    elif cmd in ("/stop", "/cancel"):
         cmd_stop()
-    elif lower.startswith("/short") or lower.startswith("/clip"):
+    elif cmd in ("/short", "/clip"):
         cmd_short()
-    elif lower.startswith("/produce"):
-        custom = text[len("/produce"):].strip()
+    elif cmd == "/produce":
+        # Ensure we pass the remaining parts as topic
+        custom = text.strip()[len("/produce"):].strip()
         cmd_produce(topic=custom if custom else None)
     else:
         handle_natural_chat(text)
