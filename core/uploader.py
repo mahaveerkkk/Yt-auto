@@ -51,11 +51,16 @@ class Uploader:
                     f"{caption}\n\n"
                     f"_Note: Master file exceeds Telegram's 50MB direct bot transfer limit. Publishing to YouTube!_"
                 )
-                requests.post(f"https://api.telegram.org/bot{self.bot_token}/sendMessage", json={
+                r_tg = requests.post(f"https://api.telegram.org/bot{self.bot_token}/sendMessage", json={
                     "chat_id": self.chat_id,
                     "text": notice,
                     "parse_mode": "Markdown"
                 }, timeout=20)
+                if r_tg.status_code != 200:
+                    requests.post(f"https://api.telegram.org/bot{self.bot_token}/sendMessage", json={
+                        "chat_id": self.chat_id,
+                        "text": notice
+                    }, timeout=20)
                 return True
 
             logger.info(f"[Telegram] Uploading video '{video_path.name}' ({size_mb:.1f} MB) to Telegram...")
@@ -205,7 +210,11 @@ class Uploader:
                     import time
                     time.sleep(wait_time)
 
-            video_id = response.get("id")
+            video_id = response.get("id") if isinstance(response, dict) else None
+            if not video_id:
+                logger.error(f"[YouTube] Upload response did not contain a valid video ID: {response}")
+                return None
+
             video_url = f"https://youtu.be/{video_id}"
             logger.info(f"🎉 Successfully published to YouTube: {video_url}")
 
