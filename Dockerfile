@@ -16,10 +16,6 @@ WORKDIR /app
 # Copy dependency definition
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-RUN useradd -m -s /bin/bash appuser
-USER appuser
-
 # Copy project files
 COPY . .
 

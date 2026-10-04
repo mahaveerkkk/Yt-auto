@@ -38,7 +38,7 @@ class OmniRouter:
             return None
 
         configured_model = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
-        models_to_try = ["gemini-2.0-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash", configured_model, "gemini-flash-latest"]
+        models_to_try = ["gemini-2.5-flash", "gemini-flash-lite-latest", configured_model, "gemini-flash-latest", "gemini-2.0-flash-lite"]
         models_to_try = list(dict.fromkeys(models_to_try))
         
         try:
